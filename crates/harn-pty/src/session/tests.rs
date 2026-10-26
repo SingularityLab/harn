@@ -11,6 +11,7 @@ use harn_core::{Action, Policy, Trigger};
 use harness::{RESIZED, SIZE, Step, automation, child_command, fake_args, run_headless};
 
 use super::Session;
+use crate::automation::Automation;
 use crate::console::{self, ConsoleGuard};
 use crate::pump::Event;
 use crate::queue::InputQueue;
@@ -31,29 +32,49 @@ const GAP_MS: u64 = 150;
 const OVERLOAD_ERROR: &str =
     r#"API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
 
-/// Keys typed between our `continue` and its Enter would be submitted glued to it.
-#[test]
-fn typing_cancels_the_rest_of_an_injection() {
+/// A session without a pseudo terminal; `written` yields what it would type into the agent.
+fn idle_session(
+    dry_run: bool,
+    actions: Option<mpsc::Sender<Action>>,
+) -> (Session, mpsc::Receiver<Vec<u8>>) {
     let (pty_input, written) = mpsc::channel();
-    let mut session = Session {
+    let session = Session {
         master: None,
         size: SIZE,
         poll_size: Box::new(|| None),
         driver: None,
-        dry_run: false,
+        dry_run,
         queue: InputQueue::default(),
         pty_input,
+        actions,
         next_tick: Instant::now(),
         output_closed: false,
     };
-    let t0 = Instant::now();
-    let action = Action::Input {
+    (session, written)
+}
+
+fn continue_input() -> Action {
+    Action::Input {
         chunks: vec!["continue".into(), "\r".into()],
         gap_ms: GAP_MS,
         trigger: Trigger::Overloaded,
         attempt: 1,
-    };
-    session.execute(action, t0);
+    }
+}
+
+fn call_for_help() -> Action {
+    Action::Notify {
+        trigger: Trigger::UsageLimit,
+        message: "gave up".into(),
+    }
+}
+
+/// Keys typed between our `continue` and its Enter would be submitted glued to it.
+#[test]
+fn typing_cancels_the_rest_of_an_injection() {
+    let (mut session, written) = idle_session(false, None);
+    let t0 = Instant::now();
+    session.execute(continue_input(), t0);
     session.flush_due(t0);
     assert_eq!(written.try_iter().collect::<Vec<_>>(), [b"continue"]);
     session.handle(Event::UserInput);
@@ -66,12 +87,69 @@ fn typing_cancels_the_rest_of_an_injection() {
 }
 
 #[test]
+fn executed_actions_are_sent_to_the_caller() {
+    let (actions, reported) = mpsc::channel();
+    let (mut session, _written) = idle_session(false, Some(actions));
+    let t0 = Instant::now();
+    session.execute(continue_input(), t0);
+    session.execute(call_for_help(), t0);
+    let reported: Vec<_> = reported.try_iter().collect();
+    assert_eq!(reported, [continue_input(), call_for_help()]);
+}
+
+#[test]
+fn a_dry_run_reports_calls_for_help_but_not_typing() {
+    let (actions, reported) = mpsc::channel();
+    let (mut session, written) = idle_session(true, Some(actions));
+    let t0 = Instant::now();
+    session.execute(continue_input(), t0);
+    session.execute(call_for_help(), t0);
+    session.flush_due(t0);
+    assert_eq!(written.try_iter().count(), 0, "a dry run typed");
+    assert_eq!(reported.try_iter().collect::<Vec<_>>(), [call_for_help()]);
+}
+
+#[test]
+fn a_gone_receiver_does_not_stop_the_typing() {
+    let (actions, reported) = mpsc::channel();
+    drop(reported);
+    let (mut session, written) = idle_session(false, Some(actions));
+    let t0 = Instant::now();
+    session.execute(continue_input(), t0);
+    session.flush_due(t0);
+    assert_eq!(written.try_iter().collect::<Vec<_>>(), [b"continue"]);
+    assert!(
+        session.actions.is_none(),
+        "kept sending to a closed channel"
+    );
+}
+
+#[test]
 fn overloaded_agent_gets_continue_and_its_exit_code_propagates() {
+    let (actions, reported) = mpsc::channel();
+    let automation = Automation {
+        actions: Some(actions),
+        ..automation()
+    };
     let cmd = child_command(&test_path("fake_agent"), &[(FAKE_AGENT_ENV, "overloaded")]);
-    let done = run_headless(cmd, Some(automation()), Vec::new());
+    let done = run_headless(cmd, Some(automation), Vec::new());
     assert_eq!(done.code, RESUMED_EXIT_CODE, "output:\n{}", done.output);
     let resumed = done.output.contains("fake agent: resumed");
     assert!(resumed, "output:\n{}", done.output);
+    let nudged = |action: Action| {
+        matches!(
+            action,
+            Action::Input {
+                trigger: Trigger::Overloaded,
+                attempt: 1,
+                ..
+            }
+        )
+    };
+    assert!(
+        reported.try_iter().any(nudged),
+        "the nudge was not reported"
+    );
 }
 
 /// `run` itself, nested inside a PTY: real console modes (restored on drop and on unwind), raw VT
@@ -154,6 +232,7 @@ fn fake_wrapper() {
         profile: None,
         policy: Policy::default(),
         dry_run: false,
+        actions: None,
     };
     std::process::exit(crate::run(opts).unwrap());
 }

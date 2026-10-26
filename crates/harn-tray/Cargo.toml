@@ -1,0 +1,28 @@
+[package]
+name = "harn-tray"
+description = "Tray app for harn: keeps Claude Code, Codex and other terminal agents running, with notifications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+anyhow.workspace = true
+auto-launch.workspace = true
+clap.workspace = true
+harn.workspace = true
+harn-core.workspace = true
+harn-orca.workspace = true
+harn-update.workspace = true
+jiff.workspace = true
+open.workspace = true
+tao.workspace = true
+tracing.workspace = true
+tray-icon.workspace = true
+
+[lints]
+workspace = true

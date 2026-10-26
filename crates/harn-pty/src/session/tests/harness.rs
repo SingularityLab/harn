@@ -141,6 +141,7 @@ pub(super) fn automation() -> Automation {
         profile: Profile::from_toml(TEST_PROFILE).unwrap(),
         policy,
         dry_run: false,
+        actions: None,
     }
 }
 

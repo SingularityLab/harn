@@ -1,6 +1,7 @@
 //! The agent's rendered screen and the engine that watches it.
 
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::mpsc::Sender;
 
 use harn_core::{Action, Engine, Policy, Profile, Snapshot};
 use portable_pty::PtySize;
@@ -11,6 +12,7 @@ pub(crate) struct Automation {
     pub(crate) profile: Profile,
     pub(crate) policy: Policy,
     pub(crate) dry_run: bool,
+    pub(crate) actions: Option<Sender<Action>>,
 }
 
 /// The agent's screen rebuilt from its raw output, and the engine reading it. Every call returns

@@ -8,8 +8,9 @@
 
 use std::ffi::OsString;
 use std::io;
+use std::sync::mpsc::Sender;
 
-use harn_core::{Policy, Profile};
+use harn_core::{Action, Policy, Profile};
 
 mod automation;
 mod command;
@@ -28,6 +29,9 @@ pub struct RunOptions {
     pub policy: Policy,
     /// Log actions instead of typing them.
     pub dry_run: bool,
+    /// Gets every action the session carried out: input queued for typing (never in a dry run) and
+    /// calls for the user. Dropped when the session ends; a receiver that is gone is ignored.
+    pub actions: Option<Sender<Action>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -70,6 +74,7 @@ pub fn run(opts: RunOptions) -> Result<i32, PtyError> {
         profile,
         policy,
         dry_run,
+        actions,
     } = opts;
     let command = command::build(&program, &args)?;
     let size = console::terminal_size().unwrap_or_default();
@@ -88,6 +93,7 @@ pub fn run(opts: RunOptions) -> Result<i32, PtyError> {
         profile,
         policy,
         dry_run,
+        actions,
     });
     let code = session::run(pty, automation, console::stdio_terminal())?;
     tracing::info!(code, "agent exited");

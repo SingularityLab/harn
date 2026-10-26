@@ -1,15 +1,19 @@
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::Path;
+use std::sync::mpsc::{self, Sender};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
 
 use anyhow::{Context, Result, bail};
-use harn_core::{Profile, classify};
+use harn_core::{Action, Profile, classify};
 use harn_update::{CheckOptions, Outcome, Updater};
 
 use crate::cli::{CheckArgs, RunArgs, UpdateArgs};
-use crate::config::{Config, LoadedProfile, Paths};
+use harn::config::{Config, LoadedProfile, Paths};
+use harn::notify::{self, Notifier};
+use harn::updates::describe;
 
 pub fn run(args: RunArgs, cfg: Config, paths: &Paths, profiles: &[LoadedProfile]) -> Result<i32> {
     let mut command = args.command.into_iter();
@@ -29,14 +33,41 @@ pub fn run(args: RunArgs, cfg: Config, paths: &Paths, profiles: &[LoadedProfile]
         update_before_launch(&name, &cfg, paths);
     }
     tracing::info!(program = %name, profile = ?profile.as_ref().map(|p| &p.id), "launching");
+    let actions = profile
+        .as_ref()
+        .and_then(|p| spawn_notifier(Notifier::new(&cfg.notify), p.id.clone()));
     let opts = harn_pty::RunOptions {
         program,
         args: command.collect(),
         profile,
         policy: cfg.policy,
         dry_run: args.dry_run,
+        actions,
     };
     harn_pty::run(opts).context("agent session failed")
+}
+
+/// Shows a desktop notification for what the session does. The thread ends when the session drops
+/// the sender; if it cannot start, the agent launches without notifications.
+fn spawn_notifier(notifier: Notifier, agent: String) -> Option<Sender<Action>> {
+    let (actions, received) = mpsc::channel();
+    let notify_all = move || {
+        for action in received {
+            if let Some(note) = notify::for_action(&agent, &action) {
+                notifier.send(note);
+            }
+        }
+    };
+    match thread::Builder::new()
+        .name("harn-notify".into())
+        .spawn(notify_all)
+    {
+        Ok(_) => Some(actions),
+        Err(error) => {
+            tracing::warn!(%error, "cannot start the notification thread; notifications are off");
+            None
+        }
+    }
 }
 
 /// Runs before the agent owns the terminal, so progress may go to stderr. Never blocks the launch on failure.
@@ -93,15 +124,6 @@ pub fn update(args: UpdateArgs, cfg: Config, paths: &Paths) -> Result<i32> {
         }
     }
     Ok(i32::from(failed))
-}
-
-pub fn describe(agent: &str, outcome: &Outcome) -> String {
-    match outcome {
-        Outcome::UpToDate { version } => format!("{agent}: up to date ({version})"),
-        Outcome::Updated { from, to } => format!("{agent}: updated {from} -> {to}"),
-        Outcome::Available { from, to } => format!("{agent}: update available {from} -> {to}"),
-        Outcome::Skipped { reason } => format!("{agent}: skipped ({reason})"),
-    }
 }
 
 pub fn check(args: CheckArgs, profiles: &[LoadedProfile]) -> Result<i32> {

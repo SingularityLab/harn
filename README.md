@@ -67,6 +67,40 @@ function claude { harn run claude @args }
 function codex { harn run codex @args }
 ```
 
+### Tray app
+
+`harn-tray` does what `harn watch` does, from the system tray, and tells you what happened with
+desktop notifications:
+
+```sh
+cargo install --git https://github.com/SingularityLab/harn harn-tray
+harn-tray
+```
+
+The dot in the tray shows how things are:
+
+| colour | meaning |
+|---|---|
+| green | watching your Orca agent sessions |
+| amber | Orca is not running (harn retries every 30s) or stopped answering |
+| red | an agent needs you: harn gave up, or the error needs a human. Clears when you open the menu |
+| grey | paused |
+
+The menu shows the status and harn's last action ("continued claude at 14:32"), and has:
+
+- **Auto-continue**: pause or resume watching.
+- **Start at login**: turned on automatically the first time harn-tray runs. If you turn it off, it
+  stays off.
+- **Auto-update agents** and **Notifications**: the `[update]` and `[notify]` `enabled` settings.
+- **Update agents now**, **Open log**, **Quit**.
+- **Settings…**: opens `config.toml` (creating a commented one if there is none). Changes apply a few
+  seconds after you save.
+
+`harn-tray` accepts `--config` and `--terminal HANDLE=AGENT` like `harn watch`, and refuses to start
+next to a running `harn watch`. On Linux it needs a tray that supports AppIndicator (GNOME needs the
+AppIndicator extension), and building it needs `libgtk-3-dev libayatana-appindicator3-dev` (Debian /
+Ubuntu package names).
+
 ### Other commands
 
 ```sh
@@ -127,6 +161,9 @@ action = "continue"         # let harn answer "Want me to continue?" for you
 [update]
 enabled = true
 check_interval_mins = 60
+
+[notify]
+enabled = true              # desktop notifications
 
 [orca]
 bin = "orca"

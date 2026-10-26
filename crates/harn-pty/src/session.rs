@@ -123,7 +123,7 @@ fn start(
         pump::pump_input(input, keys, key_events)
     })?;
     spawn("harn-pty-wait", move || pump::wait_child(child, events_tx))?;
-    let (driver, dry_run) = driver(automation, size);
+    let (driver, dry_run, actions) = driver(automation, size);
     let session = Session {
         master: Some(master),
         size,
@@ -132,23 +132,29 @@ fn start(
         dry_run,
         queue: InputQueue::default(),
         pty_input,
+        actions,
         next_tick: Instant::now(),
         output_closed: false,
     };
     Ok((session, events))
 }
 
-fn driver(automation: Option<Automation>, size: PtySize) -> (Option<Driver>, bool) {
+fn driver(
+    automation: Option<Automation>,
+    size: PtySize,
+) -> (Option<Driver>, bool, Option<Sender<Action>>) {
     let Some(Automation {
         profile,
         policy,
         dry_run,
+        actions,
     }) = automation
     else {
-        return (None, false);
+        return (None, false, None);
     };
     tracing::info!(profile = %profile.id, dry_run, "auto-continue is on");
-    (Some(Driver::new(profile, policy, size, wall_ms())), dry_run)
+    let driver = Driver::new(profile, policy, size, wall_ms());
+    (Some(driver), dry_run, actions)
 }
 
 /// Owned by the calling thread; the only place that sees the screen, the engine and the clock.
@@ -162,6 +168,8 @@ struct Session {
     dry_run: bool,
     queue: InputQueue,
     pty_input: Sender<Vec<u8>>,
+    /// Told about every executed action; `None` if nobody asked, or once the receiver is gone.
+    actions: Option<Sender<Action>>,
     next_tick: Instant,
     output_closed: bool,
 }
@@ -275,7 +283,7 @@ impl Session {
     }
 
     fn execute(&mut self, action: Action, now: Instant) {
-        match action {
+        match &action {
             Action::Input {
                 chunks,
                 gap_ms,
@@ -287,12 +295,24 @@ impl Session {
                     return;
                 }
                 tracing::info!(?trigger, attempt, ?chunks, "typing into the agent");
-                let chunks = chunks.into_iter().map(String::into_bytes);
-                self.queue.push(chunks, Duration::from_millis(gap_ms), now);
+                let chunks = chunks.iter().map(|chunk| chunk.as_bytes().to_vec());
+                self.queue.push(chunks, Duration::from_millis(*gap_ms), now);
             }
             Action::Notify { trigger, message } => {
                 tracing::warn!(?trigger, %message, "the agent needs attention");
             }
+        }
+        self.report(action);
+    }
+
+    /// A receiver that is gone only means nobody is listening; it must not disturb the session.
+    fn report(&mut self, action: Action) {
+        let Some(actions) = &self.actions else {
+            return;
+        };
+        if actions.send(action).is_err() {
+            tracing::debug!("nobody receives the executed actions any more");
+            self.actions = None;
         }
     }
 

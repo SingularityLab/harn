@@ -1,14 +1,13 @@
 mod cli;
 mod commands;
-mod config;
-mod logging;
 mod watch;
 
 use anyhow::Result;
 use clap::Parser;
 
 use crate::cli::{Cli, Command};
-use crate::config::Paths;
+use harn::config::{self, Paths};
+use harn::logging;
 
 const EXIT_ERROR: i32 = 2;
 

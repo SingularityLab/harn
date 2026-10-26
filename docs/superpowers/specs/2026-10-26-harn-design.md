@@ -151,6 +151,22 @@ Config: `<config_dir>/harn/config.toml` with `[policy]` (above), `[update]` (`en
 `check_interval_mins`, `install_timeout_secs`), `[orca]` (`bin`, `interval_ms`). Logs:
 `<data_local_dir>/harn/harn.log` (never stdout in `run` mode — it would corrupt the agent's TUI).
 
+## Tray app and notifications (added 2026-10-26)
+
+`harn-tray` is a separate GUI binary (no console window on Windows) for Windows, macOS and Linux, built on
+`tao` + `tray-icon`. It replaces a long-running `harn watch` tab:
+
+- watches Orca agent terminals in the background (same engine, same single-instance lock);
+- the icon colour shows status (watching / paused / Orca unreachable / an agent needs you);
+- menu: status, last action, Auto-continue (pause), Start at login (enabled on first run), Auto-update
+  agents, Notifications, Update agents now, Settings… (opens `config.toml`), Open log, Quit;
+- toggles are written back to `config.toml` with `toml_edit`, keeping the user's comments.
+
+Desktop notifications (`notify-rust`) come from whichever harn process acts: the tray, `harn watch` or
+`harn run`. They fire on the first nudge in a run of failures, on anything that needs the user (gave up,
+stalled, unsubmitted `continue`), and on completed agent updates. `[notify] enabled = false` turns them
+off. Shared CLI/tray code (config, lock, background updater, notifications) lives in the `harn` lib target.
+
 ## Testing
 
 - core: fixture screens in `crates/harn-core/tests/fixtures/<agent>/*.txt` (real captures from the agents

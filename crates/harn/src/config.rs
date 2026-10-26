@@ -6,6 +6,8 @@ use harn_core::{Policy, Profile};
 use harn_update::UpdateConfig;
 use serde::Deserialize;
 
+use crate::notify::NotifyConfig;
+
 const APP_DIR: &str = "harn";
 const DEFAULT_ORCA_BIN: &str = "orca";
 
@@ -15,6 +17,7 @@ pub struct Config {
     pub policy: Policy,
     pub update: UpdateConfig,
     pub orca: OrcaConfig,
+    pub notify: NotifyConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +79,33 @@ fn parse(src: &str) -> Result<Config> {
     let cfg: Config = toml::from_str(src)?;
     cfg.policy.validate()?;
     Ok(cfg)
+}
+
+/// Sets `[table] key = value` in the config file (created if missing), keeping the user's comments
+/// and layout. Used by settings toggles.
+pub fn set_bool(path: &Path, table: &str, key: &str, value: bool) -> Result<()> {
+    let src = match fs::read_to_string(path) {
+        Ok(src) => src,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| format!("cannot read config {}", path.display())),
+    };
+    let mut doc: toml_edit::DocumentMut = src
+        .parse()
+        .with_context(|| format!("invalid config {}", path.display()))?;
+    if doc.get(table).is_none() {
+        doc[table] = toml_edit::table();
+    }
+    let item = &mut doc[table][key];
+    let decor = item.as_value().map(|old| old.decor().clone());
+    *item = toml_edit::value(value);
+    if let (Some(decor), Some(new)) = (decor, item.as_value_mut()) {
+        *new.decor_mut() = decor;
+    }
+    parse(&doc.to_string()).with_context(|| format!("`{table}.{key}` is not a valid setting"))?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
+    fs::write(path, doc.to_string()).with_context(|| format!("cannot write {}", path.display()))
 }
 
 pub struct LoadedProfile {
@@ -156,6 +186,22 @@ mod tests {
     #[test]
     fn unknown_keys_are_rejected() {
         assert!(parse("[orca]\nintervall_ms = 5\n").is_err());
+    }
+
+    #[test]
+    fn set_bool_keeps_comments_and_creates_missing_tables() {
+        let dir = std::env::temp_dir().join(format!("harn-config-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&path, "# mine\n[update]\nenabled = true # keep\n").unwrap();
+        set_bool(&path, "update", "enabled", false).unwrap();
+        set_bool(&path, "notify", "enabled", false).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# mine") && text.contains("# keep"), "{text}");
+        let cfg = load(&path).unwrap();
+        assert!(!cfg.update.enabled && !cfg.notify.enabled);
+        assert!(set_bool(&path, "update", "no_such_key", true).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
