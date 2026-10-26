@@ -1,0 +1,10 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~\projects\demo-project
+❯ say hi
+● API Error: 401 Invalid API key · Please run /login
+✻ Crunched for 1s · done 8:29 PM
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

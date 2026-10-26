@@ -1,0 +1,13 @@
+  >_ OpenAI Codex (v0.164.0)
+     ~\projects\demo-project
+› say hi
+■ We’re currently experiencing high demand, which may cause temporary errors.
+› create an empty file named harn-test2.txt
+• Running touch harn-test.txt
+  Would you like to run the following command?
+  Environment: local
+  $ touch harn-test.txt
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `touch harn-test.txt` (p)
+  3. No, and tell Codex what to do differently (esc)
+  Press enter to confirm or esc to cancel

@@ -1,0 +1,8 @@
+  ⎿  Read 245 lines
+● I'll split the tokenizer out of parser.rs next.
+● API Error: Repeated 529 Overloaded errors. The API is at capacity — this is usually temporary. Try again in a moment. If it persists, check
+  https://status.claude.com.
+✻ Cogitated for 10s · done 8:25 PM
+Resume this session with:
+claude --resume 00000000-0000-0000-0000-000000000000
+PS C:\Users\alice\projects\demo-project>

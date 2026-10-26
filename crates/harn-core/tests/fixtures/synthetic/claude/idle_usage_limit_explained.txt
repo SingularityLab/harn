@@ -1,0 +1,12 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~\projects\demo-project
+❯ why did you stop yesterday?
+● The turn ended on the plan limit; the transcript says:
+  You've hit your weekly limit · resets Nov 2, 5pm
+  Nothing was lost, so I can pick up where I left off.
+✻ Brewed for 3s · done 9:01 PM
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

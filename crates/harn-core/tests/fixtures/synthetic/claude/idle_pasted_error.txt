@@ -1,0 +1,14 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~\projects\demo-project
+❯ my other session stopped with this:
+  ● API Error: Repeated 529 Overloaded errors. The API is at capacity — this is usually temporary.
+  ● You've hit your session limit · resets 11:47pm (Europe/Moscow)
+  what does it mean?
+● The API was overloaded, so Claude Code gave up after three 529 responses in a row.
+  Nothing to fix on your side.
+✻ Brewed for 3s · done 9:01 PM
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

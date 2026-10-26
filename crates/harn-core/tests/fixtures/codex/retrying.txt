@@ -1,0 +1,8 @@
+  >_ OpenAI Codex (v0.164.0)
+     ~\projects\demo-project
+› say hi
+• Reconnecting... 2/3 (3s • esc to interrupt)
+  └ Stream disconnected before completion: Transport error: network error: error decoding response body
+› Ask Codex to do anything
+  gpt-5.1-codex default · ~\projects\demo-project
+  ? for shortcuts                                                                                                                                     ⚠ 1 warning · f2 to view

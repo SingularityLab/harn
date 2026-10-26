@@ -1,0 +1,10 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   ~\projects\demo-project
+❯ say hi
+● You've hit your org's monthly spend limit · resets Dec 1, 12am (Europe/Moscow)
+✻ Crunched for 1s · done 8:29 PM
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

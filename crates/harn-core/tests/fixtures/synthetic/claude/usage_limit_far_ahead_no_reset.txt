@@ -1,0 +1,10 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~\projects\demo-project
+❯ say hi
+● You've hit your Opus limit · resets Jan 4, 2027, 5:30pm (Europe/Moscow) · progress saved
+✻ Crunched for 2s · done 8:29 PM
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

@@ -1,0 +1,61 @@
+# Codex CLI (OpenAI), verified against 0.164.0 screens (docs/research/agent-screens.md).
+# Regexes are TOML literal strings: no escaping, but a single quote must be written as \x27.
+id = "codex"
+name = "Codex"
+aliases = ["codex", "openai-codex", "codex-cli"]
+continue_text = "continue"
+submit = "\r"
+interrupt = "\u001b"
+gap_ms = 150
+tail_lines = 40
+
+[signatures]
+working = [
+    # "• Working (1s • esc to interrupt)"; the header word may be a reasoning title instead.
+    '(?i)\besc to interrupt\b',
+    # Own reconnect loop: "• Reconnecting... 2/3 (3s • esc to interrupt)".
+    '^\s*•\s*Reconnecting\.\.\.\s*\d+/\d+',
+]
+# Final errors are anchored on the red "■" square at column 0: during the reconnect loop the same
+# text shows under "└", and an indented "■" is quoted text (an error pasted into a user message).
+# Quota, credits, spend cap and "usage limit for <model>" need a human: not matched.
+usage_limit = [
+    '^■ You[’\x27]ve hit your usage limit\.',
+]
+rate_limited = [
+    '^■ exceeded retry limit, last status: 429\b',
+    '^■ rate limit exceeded\b',
+]
+overloaded = [
+    # HTTP 503 server_is_overloaded.
+    '^■ (?:Selected model is at capacity|Flex capacity unavailable)',
+    '^■ exceeded retry limit, last status: 529\b',
+]
+server_error = [
+    # Codex renders a plain HTTP 500 as "high demand".
+    '^■ We[’\x27]re currently experiencing high demand\b',
+    '^■ exceeded retry limit, last status: 5\d\d\b',
+]
+network = [
+    '^■ stream disconnected before completion\b',
+    '^■ .*(?:error sending request|Transport error|network error)',
+]
+stopped_early = [
+    '(?i)\b(?:should I|shall I|do you want me to|would you like me to|want me to)\b[^?]*\b(?:continue|proceed|go ahead|keep going)\b[^?]*\?\s*$',
+    '(?i)\bпродолж(?:ить|аю|ать|им|у|ил|ила)\b[^?]*\?\s*$',
+]
+# "› say hi" echoes; the last "›" row is the composer, showing a placeholder when empty.
+user_echo = ['^›(?:\s|$)']
+empty_input = ['^›\s*(?:Ask Codex to do anything|Ask a follow-up question)?\s*$']
+chrome = [
+    # "  Worked for 1s • 20:32", "  └ Tip: …", separators.
+    '^\s*Worked for\b',
+    '^\s*└\s*Tip\b',
+    '^\s*─{3,}',
+]
+reset_hints = [
+    # "try again in 4 days 2 hours 35 minutes"
+    '(?i)\bin\s+(?:(?P<days>\d+)\s*days?\b[\s,]*(?:and\s+)?)?(?:(?P<hours>\d+)\s*(?:hours?|hrs?|h)\b[\s,]*(?:and\s+)?)?(?:(?P<minutes>\d+)\s*(?:minutes?|mins?|m)\b[\s,]*(?:and\s+)?)?(?:(?P<seconds>\d+)\s*(?:seconds?|secs?|s)\b)?',
+    # "try again at 11:49 PM.", "try again at Nov 3rd, 2026 9:05 AM." (local time)
+    '(?i)\b(?:resets?|try again)(?:\s+at|\s+on)?\s+(?:(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(?P<year>\d{4}),?\s+)?(?:at\s+)?)?(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]\.?m\b\.?)?(?:\s*\((?P<tz>UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+-]+)+)\))?',
+]

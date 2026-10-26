@@ -1,0 +1,6 @@
+Resume this session with:
+claude --resume 00000000-0000-0000-0000-000000000000
+PS C:\work\demo-project> & 'C:\work\run-claude.ps1'
+Resume this session with:
+claude --resume 00000000-0000-0000-0000-000000000000
+PS C:\work\demo-project>

@@ -1,0 +1,7 @@
+  >_ OpenAI Codex (v0.164.0)
+     ~\projects\demo-project
+› say hi
+■ stream disconnected before completion: error sending request
+› Ask Codex to do anything
+  gpt-5.1-codex default · ~\projects\demo-project
+  ? for shortcuts                                                                                                                                     ⚠ 1 warning · f2 to view

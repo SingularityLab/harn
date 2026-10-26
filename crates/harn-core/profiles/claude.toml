@@ -1,0 +1,67 @@
+# Claude Code (Anthropic), verified against 2.1.310 screens (docs/research/agent-screens.md).
+# Regexes are TOML literal strings: no escaping, but a single quote must be written as \x27.
+id = "claude"
+name = "Claude Code"
+aliases = ["claude", "claude-code", "claude code", "claudecode"]
+continue_text = "continue"
+submit = "\r"
+interrupt = "\u001b"
+gap_ms = 150
+# Orca drops blank rows; long errors wrap onto a second row and the footer can grow.
+tail_lines = 40
+
+[signatures]
+working = [
+    # Footer suffix while a turn runs, including Claude's own retries.
+    '(?i)\besc to interrupt\b',
+    # Own retry banner on the spinner row: "✻ API error · Retrying in 1s · attempt 1/4".
+    '·\s*Retrying in \S+.*·\s*attempt \d+/\d+',
+]
+# Final errors are anchored on the message bullet at column 0 ("●", "⏺" on macOS): the retry
+# banner carries the same text while Claude is still trying, an indented "⎿" row is tool output
+# (an API error printed by a command Claude ran), and other indented rows are quoted text.
+# Auth (401, /login), credit, spend-cap and team-budget messages need a human: not matched.
+usage_limit = [
+    # "● You've hit your session limit · resets 11:47pm (Europe/Moscow)"
+    '^(?:[●⏺]\s*)?You[’\x27]ve hit your (?:session |weekly |Opus |Sonnet |Fable |usage credit |usage )?limit\b',
+    # Older releases: "Claude usage limit reached. Your limit will reset at 3pm (Europe/Moscow)."
+    '^(?:[●⏺]\s*)?Claude (?:AI )?usage limit reached\b',
+    '^(?:[●⏺]\s*)?(?:5-hour|Weekly|Opus weekly|Session) limit reached\s*[∙·]\s*resets\b',
+]
+rate_limited = [
+    '^[●⏺]\s*API Error: (?:Request rejected \(429\)|429\b)',
+    '^[●⏺]\s*.*Server is temporarily limiting requests',
+]
+overloaded = [
+    '^[●⏺]\s*API Error: (?:Repeated 529|529\b|.*(?i:overloaded))',
+    # The suffix keeps a reply like "the database is experiencing high load" from counting.
+    '^[●⏺]\s*.*\bis experiencing high load, please use /model\b',
+    '^[●⏺]\s*.*Fast mode overloaded and is temporarily unavailable',
+]
+server_error = [
+    '^[●⏺]\s*API Error: 5\d\d\b',
+]
+network = [
+    '^[●⏺]\s*API Error: (?:Connection (?:dropped|error|closed|lost)|Request timed out|No response from API|Unable to connect)',
+]
+stopped_early = [
+    '(?i)\b(?:should I|shall I|do you want me to|would you like me to|want me to)\b[^?]*\b(?:continue|proceed|go ahead|keep going)\b[^?]*\?\s*$',
+    '(?i)\bпродолж(?:ить|аю|ать|им|у|ил|ила)\b[^?]*\?\s*$',
+]
+# "❯ say hi" echoes; the last "❯" row is the live input box (bare when empty).
+user_echo = ['^❯(?:\s|$)']
+empty_input = ['^❯\s*(?:Try ".*")?\s*$']
+chrome = [
+    # Input box rules, "✻ Cogitated for 10s · done 8:25 PM", "◐ medium · /effort".
+    '^\s*─{3,}',
+    '·\s*done\s+\d{1,2}:\d{2}',
+    '/effort\b',
+]
+reset_hints = [
+    # "Claude AI usage limit reached|1761490800"
+    '\|(?P<epoch>\d{10})\b',
+    # "resets in 2 hours 5 minutes"
+    '(?i)\bin\s+(?:(?P<days>\d+)\s*days?\b[\s,]*(?:and\s+)?)?(?:(?P<hours>\d+)\s*(?:hours?|hrs?|h)\b[\s,]*(?:and\s+)?)?(?:(?P<minutes>\d+)\s*(?:minutes?|mins?|m)\b[\s,]*(?:and\s+)?)?(?:(?P<seconds>\d+)\s*(?:seconds?|secs?|s)\b)?',
+    # "resets 11:47pm (Europe/Moscow)", "resets Nov 2, 5pm", "resets Nov 2, 2027, 5:30pm", "reset at 3pm"
+    '(?i)\b(?:resets?|try again)(?:\s+at|\s+on)?\s+(?:(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(?P<year>\d{4}),?\s+)?(?:at\s+)?)?(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]\.?m\b\.?)?(?:\s*\((?P<tz>UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+-]+)+)\))?',
+]

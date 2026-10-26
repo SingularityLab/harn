@@ -1,0 +1,19 @@
+[package]
+name = "harn-core"
+description = "IO-free detection and reaction engine for terminal coding agents (Claude Code, Codex, ...)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+jiff.workspace = true
+regex.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,27 @@
+[package]
+name = "harn"
+description = "Keep Claude Code, Codex and other terminal agents running: auto-continue on API overload, auto-update on launch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+dirs.workspace = true
+harn-core.workspace = true
+harn-orca.workspace = true
+harn-pty.workspace = true
+harn-update.workspace = true
+jiff.workspace = true
+serde.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

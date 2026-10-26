@@ -1,0 +1,25 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~\projects\demo-project
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and prompt injection before executing, runs the ones it
+▎ assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+❯ say hi
+● API Error: Repeated 529 Overloaded errors. The API is at capacity — this is usually temporary. Try again in a moment. If it persists, check your inference gateway
+  (127.0.0.1:47529).
+✻ Cogitated for 10s · done 8:25 PM
+❯ continue
+● Hi! Continuing where we left off.
+✻ Brewed for 1s · done 8:26 PM
+❯ C:/Program Files/Git/clear
+● Hi! Continuing where we left off.
+✻ Brewed for 1s · done 8:26 PM
+❯ say hi
+● API Error: 500 Internal server error. This is a server-side issue, usually temporary — try again in a moment. If it persists, check your inference gateway
+  (127.0.0.1:47529).
+✻ Brewed for 10s · done 8:27 PM
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

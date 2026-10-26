@@ -1,0 +1,11 @@
+Tips for getting started:
+1. Ask questions, edit files, or run commands.
+2. Be specific for the best results.
+3. /help for more information.
+> say hi
+✕ [API Error: Resource has been exhausted (e.g. check quota). (Status: RESOURCE_EXHAUSTED)]
+Please wait and try again later. To increase your limits, request a quota increase through AI Studio, or switch to another /auth method
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+~\projects\demo-project        no sandbox (see /docs)        gemini-2.5-pro (98% context left)

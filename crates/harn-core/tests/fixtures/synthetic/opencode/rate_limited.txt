@@ -1,0 +1,6 @@
+  opencode v1.19.4
+  ~/projects/demo-project
+┃ say hi
+┃ Too Many Requests
+┃ >
+  enter send   ctrl+x h help   claude-sonnet-4-5 anthropic

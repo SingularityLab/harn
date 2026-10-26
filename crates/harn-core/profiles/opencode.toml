@@ -1,0 +1,60 @@
+# OpenCode (anomalyco/opencode, formerly sst/opencode). Data-only profile from source text
+# (docs/research/agent-screens.md §4), not verified on a real screen. v1.19.4 prints stop errors
+# without a prefix, so these are specific phrases rather than anchors.
+# Regexes are TOML literal strings (a single quote is \x27).
+id = "opencode"
+name = "OpenCode"
+aliases = ["opencode", "opencode-ai", "open-code"]
+continue_text = "continue"
+submit = "\r"
+interrupt = "\u001b"
+gap_ms = 150
+tail_lines = 40
+
+[signatures]
+working = [
+    '(?i)\besc (?:again to )?interrupt\b',
+    # Own retries: "<message> [retrying in 4s attempt #2]", "⚠ Retrying in 4s · attempt 2 · …".
+    '(?i)\[retrying(?: in [^\]]+?)? attempt #\d+\]',
+    'Retrying in \d+s · attempt \d+',
+    'Retry due · attempt \d+',
+    'Retrying \(attempt \d+\) ·',
+]
+usage_limit = [
+    # "<Limit> usage limit reached. It will reset in 2 hours 5 minutes." / "Resets 3:45 PM today"
+    '(?i)\busage limit reached\b',
+    '(?i)\bused today[’\x27]s free messages\b',
+]
+rate_limited = [
+    '(?i)\btoo many requests\b',
+    '(?i)\brate.?limit(?:ed| exceeded| reached)\b',
+]
+overloaded = [
+    '(?i)\b(?:provider|model|server) is overloaded\b',
+    '(?i)\boverloaded_error\b',
+]
+server_error = [
+    '(?i)\binternal server error\b',
+    '(?i)\bbad gateway\b',
+    '(?i)\bservice unavailable\b',
+    '(?i)\bgateway timeout\b',
+]
+network = [
+    '(?i)\bconnection reset by server\b',
+    '(?i)\bheaders timed out\b',
+    '(?i)\bfetch failed\b',
+    '(?i)\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up)\b',
+]
+stopped_early = [
+    '(?i)\b(?:should I|shall I|do you want me to|would you like me to|want me to)\b[^?]*\b(?:continue|proceed|go ahead|keep going)\b[^?]*\?\s*$',
+    '(?i)\bпродолж(?:ить|аю|ать|им|у|ил|ила)\b[^?]*\?\s*$',
+]
+chrome = [
+    '^\s*[╭╰│┃─━]',
+    '(?i)\bctrl\+',
+    '(?i)\benter send\b',
+]
+reset_hints = [
+    '(?i)\bin\s+(?:(?P<days>\d+)\s*days?\b[\s,]*(?:and\s+)?)?(?:(?P<hours>\d+)\s*(?:hours?|hrs?|h)\b[\s,]*(?:and\s+)?)?(?:(?P<minutes>\d+)\s*(?:minutes?|mins?|m)\b[\s,]*(?:and\s+)?)?(?:(?P<seconds>\d+)\s*(?:seconds?|secs?|s)\b)?',
+    '(?i)\b(?:resets?|try again)(?:\s+at|\s+on)?\s+(?:(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(?P<year>\d{4}),?\s+)?(?:at\s+)?)?(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]\.?m\b\.?)?(?:\s*\((?P<tz>UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+-]+)+)\))?',
+]

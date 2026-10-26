@@ -1,0 +1,11 @@
+Tips for getting started:
+1. Ask questions, edit files, or run commands.
+2. Be specific for the best results.
+3. /help for more information.
+> say hi
+✕ [API Error: got status: 503 Service Unavailable. {"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}]
+ℹ This request failed. Press F12 for diagnostics, or run /settings and change "Error Verbosity" to full for details.
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+~\projects\demo-project        no sandbox (see /docs)        gemini-2.5-pro (98% context left)

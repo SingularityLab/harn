@@ -1,0 +1,10 @@
+  >_ OpenAI Codex (v0.164.0)
+     ~\projects\demo-project
+› I keep seeing
+  ■ stream disconnected before completion: error sending request
+  is my proxy broken?
+• Probably not: that error means the connection dropped mid-stream, and Codex retries it on its own.
+  Worked for 4s • 21:10
+› Ask Codex to do anything
+  gpt-5.1-codex default · ~\projects\demo-project
+  ? for shortcuts

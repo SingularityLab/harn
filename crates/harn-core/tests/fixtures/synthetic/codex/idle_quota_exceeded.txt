@@ -1,0 +1,7 @@
+  >_ OpenAI Codex (v0.164.0)
+     ~\projects\demo-project
+› say hi
+■ Quota exceeded. Check your plan and billing details.
+› Ask Codex to do anything
+  gpt-5.1-codex default · ~\projects\demo-project
+  ? for shortcuts

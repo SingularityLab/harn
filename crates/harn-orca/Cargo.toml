@@ -1,0 +1,19 @@
+[package]
+name = "harn-orca"
+description = "Orca ADE sidecar: auto-continue stalled agent terminals via the orca CLI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+harn-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

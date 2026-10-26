@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+keywords = ["claude-code", "codex", "agent", "terminal", "pty"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace.dependencies]
+harn-core = { path = "crates/harn-core", version = "0.1.0" }
+harn-update = { path = "crates/harn-update", version = "0.1.0" }
+harn-orca = { path = "crates/harn-orca", version = "0.1.0" }
+harn-pty = { path = "crates/harn-pty", version = "0.1.0" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+crossterm = "0.29"
+dirs = "6"
+jiff = "0.2"
+portable-pty = "0.9"
+regex = "1"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "3", features = ["json"] }
+vt100 = "0.16"
+which = "8"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+strip = true

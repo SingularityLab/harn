@@ -1,0 +1,50 @@
+# Gemini CLI (Google). Data-only profile from source text (docs/research/agent-screens.md §4),
+# not verified on a real screen. Regexes are TOML literal strings (a single quote is \x27).
+id = "gemini"
+name = "Gemini CLI"
+aliases = ["gemini", "gemini-cli", "gemini cli"]
+continue_text = "continue"
+submit = "\r"
+interrupt = "\u001b"
+gap_ms = 150
+tail_lines = 40
+
+[signatures]
+working = [
+    # "⠋ Thinking... (esc to cancel, 12s)"
+    '(?i)\besc to cancel\b',
+    # Own retries: "This is taking a bit longer, we're still on it." / "Trying to reach <model> (Attempt 2/10)"
+    '(?i)\bwe[’\x27]re still on it\b',
+    '(?i)\bTrying to reach .* \(Attempt \d+/\d+\)',
+]
+# Stop lines are "✕ [API Error: <message>]". Auth and billing errors are not matched.
+usage_limit = [
+    # Quota dialog: "Usage limit reached for <model>." then "Access resets at 3:45 PM PST."
+    '(?i)\bUsage limit reached for\b',
+]
+rate_limited = [
+    '^\s*✕ \[API Error:.*(?:\b429\b|RESOURCE_EXHAUSTED|(?i:too many requests|rate limit))',
+]
+overloaded = [
+    '^\s*✕ \[API Error:.*(?:\b503\b|\bUNAVAILABLE\b|(?i:overloaded))',
+]
+server_error = [
+    '^\s*✕ \[API Error:.*(?:\b50[0248]\b|\bINTERNAL\b)',
+]
+network = [
+    '^\s*✕ \[API Error:.*(?i:fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network error)',
+]
+stopped_early = [
+    '(?i)\b(?:should I|shall I|do you want me to|would you like me to|want me to)\b[^?]*\b(?:continue|proceed|go ahead|keep going)\b[^?]*\?\s*$',
+    '(?i)\bпродолж(?:ить|аю|ать|им|у|ил|ила)\b[^?]*\?\s*$',
+]
+chrome = [
+    # Input box and borders, footer (cwd, sandbox, model and context).
+    '^\s*[╭╰│─]',
+    '(?i)\bcontext left\b',
+    '(?i)\bno sandbox\b',
+]
+reset_hints = [
+    '(?i)\bin\s+(?:(?P<days>\d+)\s*days?\b[\s,]*(?:and\s+)?)?(?:(?P<hours>\d+)\s*(?:hours?|hrs?|h)\b[\s,]*(?:and\s+)?)?(?:(?P<minutes>\d+)\s*(?:minutes?|mins?|m)\b[\s,]*(?:and\s+)?)?(?:(?P<seconds>\d+)\s*(?:seconds?|secs?|s)\b)?',
+    '(?i)\b(?:resets?|try again)(?:\s+at|\s+on)?\s+(?:(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(?P<year>\d{4}),?\s+)?(?:at\s+)?)?(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]\.?m\b\.?)?(?:\s*\((?P<tz>UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+-]+)+)\))?',
+]

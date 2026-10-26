@@ -1,0 +1,13 @@
+Tips for getting started:
+1. Ask questions, edit files, or run commands.
+2. Be specific for the best results.
+3. /help for more information.
+> say hi
+╭──────────────────────────────────────────────────────────────╮
+│ Usage limit reached for gemini-2.5-pro.                      │
+│ Access resets at 3:45 PM GMT+3.                              │
+│ ● 1. Keep trying                                             │
+│   2. Switch to gemini-2.5-flash                              │
+│   3. Stop                                                    │
+╰──────────────────────────────────────────────────────────────╯
+~\projects\demo-project        no sandbox (see /docs)        gemini-2.5-pro (98% context left)

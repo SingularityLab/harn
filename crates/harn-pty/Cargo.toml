@@ -1,0 +1,23 @@
+[package]
+name = "harn-pty"
+description = "PTY wrapper that runs a terminal coding agent and auto-continues it when it stalls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+harn-core.workspace = true
+portable-pty.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+vt100.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
