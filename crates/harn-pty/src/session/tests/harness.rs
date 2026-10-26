@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use harn_core::{Policy, Profile, Reaction, ReactionKind, Reactions};
-use portable_pty::{ChildKiller, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize};
 
 use crate::automation::Automation;
 use crate::command;
@@ -25,11 +25,11 @@ pub(super) const RESIZED: PtySize = PtySize {
     cols: 100,
     ..SIZE
 };
+/// The watchdog kills the agent after this long.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 const TEST_PROFILE: &str = r#"
 id = "fake"
 name = "Fake agent"
-aliases = ["fake"]
 gap_ms = 50
 
 [signatures]
@@ -52,15 +52,14 @@ pub(super) struct Finished {
 
 /// libtest arguments that run exactly the test at `test_path`, printing straight to the PTY.
 pub(super) fn fake_args(test_path: &str) -> Vec<OsString> {
-    [
+    let args = [
         "--exact",
         test_path,
         "--nocapture",
         "--quiet",
         "--test-threads=1",
-    ]
-    .map(OsString::from)
-    .to_vec()
+    ];
+    args.map(OsString::from).to_vec()
 }
 
 pub(super) fn child_command(test_path: &str, env: &[(&str, &str)]) -> CommandBuilder {
@@ -72,81 +71,37 @@ pub(super) fn child_command(test_path: &str, env: &[(&str, &str)]) -> CommandBui
     cmd
 }
 
+/// Runs `cmd` to the end; cursor-position queries are answered by the session, the rest by
+/// `script`.
 pub(super) fn run_headless(
     cmd: CommandBuilder,
     automation: Option<Automation>,
     script: Vec<(&'static str, Step)>,
 ) -> Finished {
     let pty = Pty::spawn(cmd, SIZE, OsStr::new("test agent")).unwrap();
-    let _disarm = watchdog(pty.child.clone_killer());
-    let (terminal, output) = scripted_terminal(script);
-    let code = run(pty, automation, terminal).unwrap();
-    let output = output.try_iter().collect::<Vec<_>>().concat();
-    Finished {
-        code,
-        output: String::from_utf8_lossy(&output).into_owned(),
-    }
-}
-
-pub(super) fn automation(dry_run: bool) -> Automation {
-    Automation {
-        profile: Profile::from_toml(TEST_PROFILE).unwrap(),
-        policy: test_policy(),
-        dry_run,
-    }
-}
-
-/// Defaults, except that an overload is answered as soon as the screen settles.
-pub(super) fn test_policy() -> Policy {
-    let defaults = Policy::default();
-    let overloaded = Reaction {
-        action: ReactionKind::Continue,
-        delay_secs: 0,
-        max_delay_secs: 0,
-        ..defaults.reactions.overloaded.clone()
-    };
-    Policy {
-        settle_ms: 300,
-        user_grace_ms: 0,
-        reactions: Reactions {
-            overloaded,
-            ..defaults.reactions.clone()
-        },
-        ..defaults
-    }
-}
-
-/// Kills the agent if the session still runs after [`SESSION_TIMEOUT`]; dropping the returned
-/// sender disarms it.
-fn watchdog(mut killer: Box<dyn ChildKiller + Send + Sync>) -> Sender<()> {
+    let mut killer = pty.child.clone_killer();
     let (disarm, disarmed) = mpsc::channel::<()>();
     thread::spawn(move || {
         if disarmed.recv_timeout(SESSION_TIMEOUT) == Err(RecvTimeoutError::Timeout) {
             killer.kill().ok();
         }
     });
-    disarm
-}
-
-/// Cursor-position queries are answered by the session, everything else by the script.
-fn scripted_terminal(script: Vec<(&'static str, Step)>) -> (Terminal, Receiver<Vec<u8>>) {
     let (keys_tx, keys) = mpsc::channel();
     let (capture, captured) = mpsc::channel();
     let (resize, resized) = mpsc::channel();
-    let output = ScriptedOutput {
-        seen: Vec::new(),
-        script,
-        keys: keys_tx,
-        resize,
-        capture,
-    };
     let mut size = SIZE;
     let terminal = Terminal {
         input: Box::new(ChannelInput {
             keys,
             pending: Vec::new(),
         }),
-        output: Box::new(output),
+        output: Box::new(ScriptedOutput {
+            seen: Vec::new(),
+            script,
+            keys: keys_tx,
+            resize,
+            capture,
+        }),
         size: Box::new(move || {
             if resized.try_recv().is_ok() {
                 size = RESIZED;
@@ -155,7 +110,38 @@ fn scripted_terminal(script: Vec<(&'static str, Step)>) -> (Terminal, Receiver<V
         }),
         answer_cursor_queries: true,
     };
-    (terminal, captured)
+    let code = run(pty, automation, terminal).unwrap();
+    drop(disarm);
+    let output = captured.try_iter().collect::<Vec<_>>().concat();
+    Finished {
+        code,
+        output: String::from_utf8_lossy(&output).into_owned(),
+    }
+}
+
+/// The test profile with default policy, except that an overload is answered once it settles.
+pub(super) fn automation() -> Automation {
+    let defaults = Policy::default();
+    let overloaded = Reaction {
+        action: ReactionKind::Continue,
+        delay_secs: 0,
+        max_delay_secs: 0,
+        ..defaults.reactions.overloaded.clone()
+    };
+    let policy = Policy {
+        settle_ms: 300,
+        user_grace_ms: 0,
+        reactions: Reactions {
+            overloaded,
+            ..defaults.reactions.clone()
+        },
+        ..defaults
+    };
+    Automation {
+        profile: Profile::from_toml(TEST_PROFILE).unwrap(),
+        policy,
+        dry_run: false,
+    }
 }
 
 struct ScriptedOutput {
@@ -166,26 +152,20 @@ struct ScriptedOutput {
     capture: Sender<Vec<u8>>,
 }
 
-impl ScriptedOutput {
-    fn perform(&self, step: Step) {
-        match step {
-            Step::Type(keys) => self.keys.send(keys.as_bytes().to_vec()).ok(),
-            Step::Resize => self.resize.send(()).ok(),
-        };
-    }
-}
-
 impl Write for ScriptedOutput {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.seen.extend_from_slice(buf);
         self.capture.send(buf.to_vec()).ok();
         let seen = String::from_utf8_lossy(&self.seen).into_owned();
-        let (shown, waiting) = std::mem::take(&mut self.script)
+        let (shown, waiting): (Vec<_>, _) = std::mem::take(&mut self.script)
             .into_iter()
             .partition(|(prompt, _)| seen.contains(prompt));
         self.script = waiting;
         for (_, step) in shown {
-            self.perform(step);
+            match step {
+                Step::Type(keys) => self.keys.send(keys.as_bytes().to_vec()).ok(),
+                Step::Resize => self.resize.send(()).ok(),
+            };
         }
         Ok(buf.len())
     }

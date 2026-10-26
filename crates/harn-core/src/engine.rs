@@ -158,8 +158,12 @@ impl Engine {
             } => {
                 let timeout = acted.at_ms.saturating_add(self.policy.effect_timeout_ms);
                 let draft = self.input.draft();
-                let unsent = acted.unsent_at_ms(draft, self.policy.settle_ms, self.keys_gate());
-                Some(unsent.map_or(timeout, |at| at.min(timeout)).max(settle))
+                let unsent = acted.unsent(draft, self.policy.settle_ms, self.keys_gate());
+                Some(
+                    unsent
+                        .map_or(timeout, |(_, at)| at.min(timeout))
+                        .max(settle),
+                )
             }
             Phase::Clear | Phase::Handled { .. } => None,
         };

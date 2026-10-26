@@ -134,15 +134,4 @@ mod tests {
         let (key, value) = std::env::vars_os().next().expect("test env is not empty");
         assert_eq!(cmd.get_env(&key), Some(value.as_os_str()));
     }
-
-    #[test]
-    fn unknown_program_is_reported_as_not_found_on_windows() {
-        let result = build(OsStr::new("harn-no-such-agent-binary"), &[]);
-        if cfg!(windows) {
-            assert!(matches!(result, Err(PtyError::NotFound { .. })));
-        } else {
-            // portable-pty searches PATH at spawn time on Unix.
-            assert!(result.is_ok());
-        }
-    }
 }

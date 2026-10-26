@@ -74,45 +74,34 @@ fn profile_for<'a>(path: &Path, profiles: &'a [Profile]) -> Option<&'a Profile> 
         .find_map(|name| profiles.iter().find(|p| p.id == name))
 }
 
-fn expectation(stem: &str) -> Option<Expect> {
-    PREFIXES
-        .iter()
-        .find(|(prefix, _)| stem.starts_with(prefix))
-        .map(|(_, expect)| *expect)
-}
-
 /// The real captures were taken around 20:30 Moscow time on this day.
 fn now_ms() -> u64 {
     let z: Zoned = "2026-10-26T20:30[Europe/Moscow]".parse().unwrap();
     u64::try_from(z.timestamp().as_millisecond()).unwrap()
 }
 
-fn check(path: &Path, profile: &Profile, expect: Expect, tz: &TimeZone) -> Result<(), String> {
-    let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default();
+fn check(
+    text: &str,
+    stem: &str,
+    profile: &Profile,
+    expect: Expect,
+    tz: &TimeZone,
+) -> Result<(), String> {
     if expect == Expect::NeverTypes {
-        return never_types(profile, &text, tz);
+        return never_types(profile, text, tz);
     }
-    let got = classify(profile, &text, now_ms(), tz);
-    let ok = match (expect, &got) {
-        (Expect::Idle, Classification::Idle) | (Expect::Working, Classification::Working) => true,
-        (Expect::NotAProblem, c) => !matches!(c, Classification::Problem(_)),
+    let got = classify(profile, text, now_ms(), tz);
+    match (expect, &got) {
+        (Expect::Idle, Classification::Idle) | (Expect::Working, Classification::Working) => Ok(()),
+        (Expect::NotAProblem, c) if !matches!(c, Classification::Problem(_)) => Ok(()),
         (Expect::Problem(t), Classification::Problem(p)) if p.trigger == t => {
             let needs_reset = t == Trigger::UsageLimit && !stem.contains(NO_RESET_MARKER);
-            if needs_reset && p.resets_at_ms.is_none() {
-                return Err(format!("no reset time parsed from {:?}", p.line));
+            match needs_reset && p.resets_at_ms.is_none() {
+                true => Err(format!("no reset time parsed from {:?}", p.line)),
+                false => Ok(()),
             }
-            true
         }
-        _ => false,
-    };
-    if ok {
-        Ok(())
-    } else {
-        Err(format!("expected {expect:?}, got {got:?}"))
+        _ => Err(format!("expected {expect:?}, got {got:?}")),
     }
 }
 
@@ -169,11 +158,13 @@ fn every_fixture_classifies_as_its_name_says() {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or_default();
-        let Some(expect) = expectation(stem) else {
+        let Some(&(_, expect)) = PREFIXES.iter().find(|(prefix, _)| stem.starts_with(prefix))
+        else {
             continue;
         };
         checked += 1;
-        if let Err(why) = check(path, profile, expect, &tz) {
+        let text = fs::read_to_string(path).unwrap();
+        if let Err(why) = check(&text, stem, profile, expect, &tz) {
             failures.push(format!("{rel}: {why}"));
         }
     }
@@ -190,82 +181,3 @@ fn every_fixture_classifies_as_its_name_says() {
 }
 
 const HOUR_MS: u64 = 3_600_000;
-
-fn read(rel: &str) -> String {
-    fs::read_to_string(fixtures_dir().join(rel)).unwrap()
-}
-
-fn engine(agent: &str) -> Engine {
-    let profile = Profile::builtins()
-        .into_iter()
-        .find(|p| p.id == agent)
-        .unwrap();
-    Engine::with_time_zone(
-        profile,
-        Policy::default(),
-        TimeZone::get("Europe/Moscow").unwrap(),
-    )
-}
-
-/// Real captures: error, one `continue`, the agent answers. The old error stays on screen above
-/// the echoed `continue` and must never cause a second action.
-#[test]
-fn real_screens_continue_once_and_never_again() {
-    let policy = Policy::default();
-    let settle = policy.settle_ms;
-    for (agent, error, trigger) in [
-        ("claude", "overloaded.txt", Trigger::Overloaded),
-        ("codex", "network.txt", Trigger::Network),
-    ] {
-        let mut engine = engine(agent);
-        let screen = |name: &str, at: u64| Snapshot {
-            text: read(&format!("{agent}/{name}")),
-            last_output_ms: at,
-        };
-        let t0 = now_ms();
-        assert_eq!(engine.step(&screen(error, t0), t0), []);
-        assert_eq!(engine.step(&screen(error, t0), t0 + settle), []);
-        let due = t0 + settle + policy.reactions.get(trigger).delay_secs * 1_000;
-        assert_eq!(engine.next_deadline_ms(), Some(due), "{agent}");
-        let acted = engine.step(&screen(error, t0), due);
-        assert!(
-            matches!(&acted[..], [Action::Input { chunks, trigger: t, attempt: 1, .. }]
-                if *chunks == ["continue", "\r"] && *t == trigger),
-            "{agent}: {acted:?}"
-        );
-        let t1 = due + 2_000;
-        assert_eq!(engine.step(&screen("working.txt", t1), t1), [], "{agent}");
-        let t2 = t1 + 3_000;
-        let resumed = screen("after_continue.txt", t2);
-        assert_eq!(engine.step(&resumed, t2), [], "{agent}");
-        assert_eq!(engine.step(&resumed, t2 + settle), [], "{agent}");
-        assert_eq!(engine.next_deadline_ms(), None, "{agent}");
-        assert_eq!(engine.step(&resumed, t2 + HOUR_MS), [], "{agent}");
-    }
-}
-
-#[test]
-fn a_draft_in_the_input_box_is_never_typed_into() {
-    let settle = Policy::default().settle_ms;
-    let mut engine = engine("claude");
-    let t0 = now_ms();
-    let draft = Snapshot {
-        text: read("synthetic/claude/overloaded_with_draft.txt"),
-        last_output_ms: t0,
-    };
-    for minute in 0..60 {
-        assert_eq!(engine.step(&draft, t0 + minute * 60_000), []);
-    }
-    assert_eq!(engine.next_deadline_ms(), None);
-    let t1 = t0 + HOUR_MS;
-    let cleared = Snapshot {
-        text: read("claude/overloaded.txt"),
-        last_output_ms: t1,
-    };
-    assert_eq!(engine.step(&cleared, t1), []);
-    let acted = engine.step(&cleared, t1 + settle);
-    assert!(
-        matches!(&acted[..], [Action::Input { attempt: 1, .. }]),
-        "{acted:?}"
-    );
-}

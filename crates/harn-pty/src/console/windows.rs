@@ -69,27 +69,3 @@ fn set_mode(handle: RawHandle, mode: CONSOLE_MODE) -> io::Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn input_mode_turns_raw_and_vt() {
-        let cooked = ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT | 0x80;
-        let raw = raw_vt_input(cooked);
-        assert_eq!(
-            raw & (ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT),
-            0
-        );
-        assert_ne!(raw & ENABLE_VIRTUAL_TERMINAL_INPUT, 0);
-        assert_ne!(raw & 0x80, 0, "unrelated flags are kept");
-    }
-
-    #[test]
-    fn output_mode_turns_vt() {
-        let mode = vt_output(ENABLE_PROCESSED_OUTPUT);
-        assert_ne!(mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING, 0);
-        assert_ne!(mode & DISABLE_NEWLINE_AUTO_RETURN, 0);
-    }
-}

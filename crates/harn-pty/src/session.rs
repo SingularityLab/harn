@@ -12,7 +12,7 @@ use harn_core::Action;
 use portable_pty::{Child, CommandBuilder, ExitStatus, MasterPty, PtySize};
 
 use crate::PtyError;
-use crate::automation::{Automation, Driver, EngineFailed, Screen};
+use crate::automation::{Automation, Driver};
 use crate::pump::{self, Event, OutputPump};
 use crate::queue::InputQueue;
 
@@ -148,8 +148,7 @@ fn driver(automation: Option<Automation>, size: PtySize) -> (Option<Driver>, boo
         return (None, false);
     };
     tracing::info!(profile = %profile.id, dry_run, "auto-continue is on");
-    let screen = Screen::new(size, wall_ms());
-    (Some(Driver::new(profile, policy, screen)), dry_run)
+    (Some(Driver::new(profile, policy, size, wall_ms())), dry_run)
 }
 
 /// Owned by the calling thread; the only place that sees the screen, the engine and the clock.
@@ -201,7 +200,9 @@ impl Session {
 
     fn handle(&mut self, event: Event) -> Option<io::Result<ExitStatus>> {
         match event {
-            Event::Output(bytes) => self.screen_output(&bytes),
+            Event::Output(bytes) => {
+                self.with_driver(|driver| driver.output(&bytes, wall_ms()));
+            }
             Event::UserInput => self.user_input(),
             Event::OutputClosed => {
                 tracing::debug!("agent output ended");
@@ -245,32 +246,22 @@ impl Session {
         }
         tracing::debug!(rows = size.rows, cols = size.cols, "terminal resized");
         self.size = size;
-        let Some(driver) = &mut self.driver else {
-            return;
-        };
-        if let Err(EngineFailed) = driver.resize(size) {
-            self.driver = None;
-        }
+        self.with_driver(|driver| driver.resize(size));
     }
 
-    fn screen_output(&mut self, bytes: &[u8]) {
-        let Some(driver) = &mut self.driver else {
-            return;
-        };
-        if let Err(EngineFailed) = driver.output(bytes, wall_ms()) {
+    /// Runs `f` on the driver, if there still is one; a failed driver is dropped for good.
+    fn with_driver<T>(&mut self, f: impl FnOnce(&mut Driver) -> Option<T>) -> Option<T> {
+        let result = f(self.driver.as_mut()?);
+        if result.is_none() {
             self.driver = None;
         }
+        result
     }
 
     fn step_automation(&mut self, now: Instant) {
-        let Some(driver) = &mut self.driver else {
-            return;
-        };
-        match driver.step(wall_ms()) {
-            Ok(actions) => actions
-                .into_iter()
-                .for_each(|action| self.execute(action, now)),
-            Err(EngineFailed) => self.driver = None,
+        let actions = self.with_driver(|driver| driver.step(wall_ms()));
+        for action in actions.into_iter().flatten() {
+            self.execute(action, now);
         }
     }
 
@@ -280,12 +271,7 @@ impl Session {
             tracing::info!("the user is typing; dropping the rest of the injected input");
             self.queue.clear();
         }
-        let Some(driver) = &mut self.driver else {
-            return;
-        };
-        if let Err(EngineFailed) = driver.user_input(wall_ms()) {
-            self.driver = None;
-        }
+        self.with_driver(|driver| driver.user_input(wall_ms()));
     }
 
     fn execute(&mut self, action: Action, now: Instant) {

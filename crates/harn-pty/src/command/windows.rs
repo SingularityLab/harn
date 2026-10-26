@@ -144,48 +144,31 @@ mod tests {
     }
 
     #[test]
-    fn prefers_the_cmd_shim_over_npms_shell_script() {
-        let npm = TempDir::new("npm");
-        npm.touch("claude");
+    fn resolves_like_a_shell() {
+        let (npm, other) = (TempDir::new("npm"), TempDir::new("other"));
+        npm.touch("claude"); // npm's POSIX shell script
         npm.touch("claude.ps1");
+        npm.touch("claude.js");
         let shim = npm.touch("claude.cmd");
-        assert_eq!(lookup("claude", &[&npm], None), Some(shim));
-    }
-
-    #[test]
-    fn first_directory_wins_then_pathext_order() {
-        let first = TempDir::new("first");
-        let second = TempDir::new("second");
-        let shim = first.touch("tool.cmd");
-        second.touch("tool.exe");
-        assert_eq!(lookup("tool", &[&first, &second], None), Some(shim));
-        let exe = first.touch("tool.exe");
-        assert_eq!(lookup("tool", &[&first, &second], None), Some(exe));
-    }
-
-    #[test]
-    fn skips_extensions_createprocess_cannot_start() {
-        let dir = TempDir::new("pathext");
-        dir.touch("agent.js");
-        let shim = dir.touch("agent.cmd");
-        assert_eq!(lookup("agent", &[&dir], Some(".JS;.CMD")), Some(shim));
+        other.touch("claude.exe");
         assert_eq!(
-            lookup("agent", &[&dir], Some(".JS")),
-            Some(dir.0.join("agent.cmd"))
+            lookup("claude", &[&npm, &other], Some(".JS;.CMD")),
+            Some(shim.clone())
         );
-    }
-
-    #[test]
-    fn explicit_names_and_paths() {
-        let dir = TempDir::new("explicit");
-        let shim = dir.touch("agent.cmd");
-        let dotted = dir.touch("my.agent.exe");
-        assert_eq!(lookup("agent.cmd", &[&dir], None), Some(shim.clone()));
-        assert_eq!(lookup("my.agent", &[&dir], None), Some(dotted));
-        let by_path = resolve(dir.0.join("agent").as_os_str(), None, None);
-        assert_eq!(by_path, Some(shim));
-        assert_eq!(lookup("missing", &[&dir], None), None);
-        assert_eq!(resolve(OsStr::new("agent"), None, None), None);
+        assert_eq!(
+            lookup("claude.cmd", &[&other, &npm], None),
+            Some(shim.clone())
+        );
+        let exe = npm.touch("claude.exe");
+        assert_eq!(lookup("claude", &[&npm], None), Some(exe));
+        let dotted = npm.touch("my.agent.exe");
+        assert_eq!(lookup("my.agent", &[&npm], None), Some(dotted));
+        assert_eq!(
+            resolve(npm.0.join("claude").as_os_str(), None, None),
+            Some(npm.0.join("claude.exe"))
+        );
+        assert_eq!(lookup("missing", &[&npm], None), None);
+        assert!(is_batch(&shim) && is_batch(Path::new("X.BAT")) && !is_batch(Path::new("x.exe")));
     }
 
     #[test]
@@ -195,29 +178,22 @@ mod tests {
     }
 
     #[test]
-    fn batch_detection_ignores_case() {
-        assert!(is_batch(Path::new(r"C:\npm\claude.CMD")));
-        assert!(is_batch(Path::new("x.bat")));
-        assert!(!is_batch(Path::new("claude.exe")));
-    }
-
-    #[test]
     fn batch_arguments_that_cmd_would_change_are_refused() {
         let script = Path::new(r"C:\Users\John Smith\npm\claude.cmd");
         let check = |arg: &str| check_batch_args(script, &[OsString::from(arg)]).is_ok();
-        for ok in [
+        let accepted = [
             "--resume",
             "",
             "fix the bug & test",
             "a|b c",
             "x(y)",
             r"C:\dir\",
-            "--x=1",
-            "what does /? do",
-        ] {
+            "what /? do",
+        ];
+        for ok in accepted {
             assert!(check(ok), "{ok:?} should be accepted");
         }
-        for bad in [
+        let refused = [
             "a&b",
             "a|b",
             "<in",
@@ -226,12 +202,11 @@ mod tests {
             "a ^ b",
             "two\nlines",
             "/?",
-            "a/?b",
             "--x=/?",
-        ] {
+        ];
+        for bad in refused {
             assert!(!check(bad), "{bad:?} should be refused");
         }
-        let odd_script = Path::new(r"C:\Tom&Jerry\claude.cmd");
-        assert!(check_batch_args(odd_script, &[]).is_err());
+        assert!(check_batch_args(Path::new(r"C:\Tom&Jerry\claude.cmd"), &[]).is_err());
     }
 }

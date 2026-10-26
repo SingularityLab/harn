@@ -21,7 +21,7 @@ pub(super) struct Acted {
 }
 
 /// The next move while our own text sits unsent in the input box.
-enum Unsent {
+pub(super) enum Unsent {
     Resubmit,
     GiveUp,
 }
@@ -41,7 +41,12 @@ impl Acted {
     /// What to do about our text still unsent in the input box, and from when: press Enter
     /// again (`MAX_RESUBMITS` times), then tell the user once. Each step waits `settle_ms` after
     /// the previous keystrokes so they can show an effect.
-    fn unsent(&self, draft: Option<&str>, settle_ms: u64, keys_open: u64) -> Option<(Unsent, u64)> {
+    pub(super) fn unsent(
+        &self,
+        draft: Option<&str>,
+        settle_ms: u64,
+        keys_open: u64,
+    ) -> Option<(Unsent, u64)> {
         if self.gave_up || draft != Some(self.text.as_str()) {
             return None;
         }
@@ -51,15 +56,6 @@ impl Acted {
         } else {
             (Unsent::GiveUp, spaced)
         })
-    }
-
-    pub(super) fn unsent_at_ms(
-        &self,
-        draft: Option<&str>,
-        settle_ms: u64,
-        keys_open: u64,
-    ) -> Option<u64> {
-        self.unsent(draft, settle_ms, keys_open).map(|(_, at)| at)
     }
 }
 

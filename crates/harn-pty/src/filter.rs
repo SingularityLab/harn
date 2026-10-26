@@ -17,7 +17,7 @@ pub(crate) struct Win32InputModeFilter {
 
 impl Win32InputModeFilter {
     pub(crate) fn filter<'a>(&mut self, chunk: &'a [u8]) -> Cow<'a, [u8]> {
-        if self.held.is_empty() && !contains(chunk, MODE_PREFIX) && partial_len(chunk) == 0 {
+        if self.held.is_empty() && find(chunk, MODE_PREFIX).is_none() && partial_len(chunk) == 0 {
             return Cow::Borrowed(chunk);
         }
         let mut data = std::mem::take(&mut self.held);
@@ -59,13 +59,7 @@ fn partial_len(data: &[u8]) -> usize {
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    find(haystack, needle).is_some()
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]
@@ -74,8 +68,7 @@ mod tests {
 
     fn run(chunks: &[&[u8]]) -> Vec<u8> {
         let mut filter = Win32InputModeFilter::default();
-        let mut out: Vec<u8> = chunks
-            .iter()
+        let mut out: Vec<u8> = (chunks.iter())
             .flat_map(|chunk| filter.filter(chunk).into_owned())
             .collect();
         out.extend(filter.finish());
@@ -83,29 +76,21 @@ mod tests {
     }
 
     #[test]
-    fn plain_output_passes_untouched_and_borrowed() {
-        let mut filter = Win32InputModeFilter::default();
-        let chunk = b"\x1b[?25hhello\x1b[?1004h";
-        assert!(matches!(filter.filter(chunk), Cow::Borrowed(c) if c == chunk));
-    }
-
-    #[test]
-    fn requests_are_dropped_other_modes_kept() {
-        let out = run(&[b"\x1b[6n\x1b[?9001h\x1b[?1004hhi\x1b[?9001l\x1b[?1004l"]);
-        assert_eq!(out, b"\x1b[6n\x1b[?1004hhi\x1b[?1004l");
-    }
-
-    #[test]
-    fn requests_split_across_chunks_are_dropped() {
+    fn requests_are_dropped_also_when_split() {
+        let out = run(&[b"\x1b[6n\x1b[?9001h\x1b[?1004hhi\x1b[?9001l"]);
+        assert_eq!(out, b"\x1b[6n\x1b[?1004hhi");
         assert_eq!(run(&[b"a\x1b[?90", b"01hb"]), b"ab");
         assert_eq!(run(&[b"a\x1b", b"[?9001", b"lb"]), b"ab");
     }
 
     #[test]
-    fn lookalikes_survive() {
-        assert_eq!(run(&[b"\x1b[?90010h"]), b"\x1b[?90010h");
-        assert_eq!(run(&[b"\x1b[?9001;1004h"]), b"\x1b[?9001;1004h");
+    fn everything_else_passes_untouched() {
+        let chunk = b"\x1b[?25hhello";
+        let mut filter = Win32InputModeFilter::default();
+        assert!(matches!(filter.filter(chunk), Cow::Borrowed(c) if c == chunk));
+        for kept in [&b"\x1b[?90010h"[..], b"\x1b[?9001;1004h", b"tail\x1b[?9"] {
+            assert_eq!(run(&[kept]), kept);
+        }
         assert_eq!(run(&[b"x\x1b[?90", b"x"]), b"x\x1b[?90x");
-        assert_eq!(run(&[b"tail\x1b[?9"]), b"tail\x1b[?9");
     }
 }

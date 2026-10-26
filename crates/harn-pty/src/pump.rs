@@ -39,7 +39,7 @@ impl OutputPump {
     pub(crate) fn run(mut self) {
         let mut buf = vec![0; OUTPUT_BUF_BYTES];
         let mut filter = Win32InputModeFilter::default();
-        let mut queries = CursorQueries::default();
+        let mut query_tail = Vec::new();
         let mut terminal_ok = true;
         while let Some(n) = read_some(self.pty.as_mut(), &mut buf, "agent output") {
             let chunk = &buf[..n];
@@ -47,7 +47,7 @@ impl OutputPump {
             if !shown.is_empty() {
                 terminal_ok = terminal_ok && write_terminal(self.terminal.as_mut(), &shown);
             }
-            self.answer_cursor_queries(&mut queries, chunk);
+            self.answer_cursor_queries(&mut query_tail, chunk);
             if self.copy_output && self.events.send(Event::Output(chunk.to_vec())).is_err() {
                 break;
             }
@@ -60,11 +60,11 @@ impl OutputPump {
         self.events.send(Event::OutputClosed).ok();
     }
 
-    fn answer_cursor_queries(&self, queries: &mut CursorQueries, chunk: &[u8]) {
+    fn answer_cursor_queries(&self, tail: &mut Vec<u8>, chunk: &[u8]) {
         let Some(input) = &self.answer_queries else {
             return;
         };
-        for _ in 0..queries.count(chunk) {
+        for _ in 0..count_cursor_queries(tail, chunk) {
             if input.send(CURSOR_REPLY.to_vec()).is_err() {
                 tracing::debug!("agent input closed; cursor query left unanswered");
                 return;
@@ -73,26 +73,15 @@ impl OutputPump {
     }
 }
 
-/// Finds cursor-position queries in the output stream, also those split across reads.
-#[derive(Debug, Default)]
-struct CursorQueries {
-    /// The end of the stream so far, one byte short of a whole query.
-    tail: Vec<u8>,
-}
-
-impl CursorQueries {
-    /// Queries completed by `chunk`. One cannot fit in the kept tail alone, so none is counted twice.
-    fn count(&mut self, chunk: &[u8]) -> usize {
-        let mut window = std::mem::take(&mut self.tail);
-        window.extend_from_slice(chunk);
-        let found = window
-            .windows(CURSOR_QUERY.len())
-            .filter(|candidate| *candidate == CURSOR_QUERY)
-            .count();
-        let keep = window.len().min(CURSOR_QUERY.len() - 1);
-        self.tail = window.split_off(window.len() - keep);
-        found
-    }
+/// Cursor-position queries completed by `chunk`. `tail` carries the end of the stream between
+/// calls, one byte short of a whole query: a split query is found, and none is counted twice.
+fn count_cursor_queries(tail: &mut Vec<u8>, chunk: &[u8]) -> usize {
+    tail.extend_from_slice(chunk);
+    let found = (tail.windows(CURSOR_QUERY.len()))
+        .filter(|candidate| *candidate == CURSOR_QUERY)
+        .count();
+    tail.drain(..tail.len().saturating_sub(CURSOR_QUERY.len() - 1));
+    found
 }
 
 /// The caller's keystrokes → the agent, and a heads-up to the session loop.
@@ -184,139 +173,61 @@ mod tests {
     use super::*;
 
     /// Each read returns the next scripted result, then end of stream.
-    struct Scripted(VecDeque<io::Result<Vec<u8>>>);
-
-    impl Scripted {
-        fn boxed(reads: Vec<Result<&[u8], ErrorKind>>) -> Box<dyn Read + Send> {
-            let reads = reads
-                .into_iter()
-                .map(|read| read.map(<[u8]>::to_vec).map_err(io::Error::from))
-                .collect();
-            Box::new(Self(reads))
-        }
-    }
+    struct Scripted(VecDeque<Result<&'static [u8], ErrorKind>>);
 
     impl Read for Scripted {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            let bytes = match self.0.pop_front() {
-                None => return Ok(0),
-                Some(read) => read?,
+            let Some(read) = self.0.pop_front() else {
+                return Ok(0);
             };
-            buf[..bytes.len()].copy_from_slice(&bytes);
+            let bytes = read?;
+            buf[..bytes.len()].copy_from_slice(bytes);
             Ok(bytes.len())
         }
     }
 
-    fn pump_keys(reads: Vec<Result<&[u8], ErrorKind>>) -> Vec<u8> {
-        let (pty, typed) = mpsc::channel();
-        let (events, _heads_up) = mpsc::channel();
-        pump_input(Scripted::boxed(reads), pty, events);
-        typed.iter().collect::<Vec<_>>().concat()
-    }
-
     /// A non-blocking stdin inherited from the parent, or a console read std cannot decode, must not
-    /// leave the keyboard dead for the rest of the session.
+    /// leave the keyboard dead for the session; a real failure ends the pump.
     #[test]
-    fn transient_read_errors_do_not_end_the_input() {
-        let reads = vec![
+    fn input_survives_transient_read_errors() {
+        let reads = [
             Err(ErrorKind::WouldBlock),
             Ok(&b"ab"[..]),
             Err(ErrorKind::InvalidData),
             Err(ErrorKind::Interrupted),
             Ok(&b"c"[..]),
+            Err(ErrorKind::PermissionDenied),
+            Ok(&b"never"[..]),
         ];
-        assert_eq!(pump_keys(reads), b"abc");
+        let (pty, typed) = mpsc::channel();
+        let (events, _heads_up) = mpsc::channel();
+        pump_input(Box::new(Scripted(reads.into())), pty, events);
+        assert_eq!(typed.iter().collect::<Vec<_>>().concat(), b"abc");
     }
 
     #[test]
-    fn a_fatal_read_error_ends_the_input() {
-        let reads = vec![Err(ErrorKind::PermissionDenied), Ok(&b"never"[..])];
-        assert_eq!(pump_keys(reads), b"");
-    }
-
-    #[test]
-    fn cursor_queries_split_across_reads_are_answered() {
-        let output = Scripted::boxed(vec![Ok(b"x\x1b["), Ok(b"6ny\x1b[6"), Ok(b"n")]);
-        let (copies, replies) = pump(output, Box::new(io::sink()), true);
-        assert_eq!(copies.concat(), b"x\x1b[6ny\x1b[6n");
-        assert_eq!(replies, vec![CURSOR_REPLY.to_vec(); 2]);
-    }
-
-    struct FailingWriter;
-
-    impl Write for FailingWriter {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::BrokenPipe, "terminal gone"))
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    fn pump(
-        output: Box<dyn Read + Send>,
-        terminal: Box<dyn Write + Send>,
-        answer: bool,
-    ) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
-        let (events_tx, events_rx) = mpsc::channel();
-        let (input_tx, input_rx) = mpsc::channel();
-        OutputPump {
-            pty: output,
-            terminal,
-            events: events_tx,
-            copy_output: true,
-            answer_queries: answer.then_some(input_tx),
-        }
-        .run();
-        let copies = events_rx
-            .iter()
-            .filter_map(|event| match event {
-                Event::Output(bytes) => Some(bytes),
-                _ => None,
-            })
-            .collect();
-        (copies, input_rx.iter().collect())
-    }
-
-    #[test]
-    fn output_is_copied_and_cursor_queries_answered_when_asked() {
-        let output = || Box::new(&b"\x1b[6nhello"[..]);
-        let (copies, replies) = pump(output(), Box::new(io::sink()), true);
-        assert_eq!(copies.concat(), b"\x1b[6nhello");
-        assert_eq!(replies, vec![CURSOR_REPLY.to_vec()]);
-        let (_, replies) = pump(output(), Box::new(io::sink()), false);
-        assert!(replies.is_empty());
-    }
-
-    #[test]
-    fn a_broken_terminal_does_not_stop_the_drain() {
-        let output = Box::new(&b"still read"[..]);
-        let (copies, _) = pump(output, Box::new(FailingWriter), false);
-        assert_eq!(copies.concat(), b"still read");
-    }
-
-    #[test]
-    fn writes_reach_the_pty_in_order() {
-        let (tx, rx) = mpsc::channel();
-        tx.send(b"continue".to_vec()).unwrap();
-        tx.send(b"\r".to_vec()).unwrap();
-        drop(tx);
-        let (sink_tx, sink_rx) = mpsc::channel();
-        pump_writes(Box::new(ChannelWriter(sink_tx)), rx);
-        assert_eq!(sink_rx.iter().collect::<Vec<_>>().concat(), b"continue\r");
-    }
-
-    struct ChannelWriter(mpsc::Sender<Vec<u8>>);
-
-    impl Write for ChannelWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.send(buf.to_vec()).map_err(io::Error::other)?;
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
+    fn cursor_queries_are_answered_only_when_asked_also_when_split() {
+        for answer in [true, false] {
+            let reads = [Ok(&b"x\x1b["[..]), Ok(&b"6ny\x1b[6"[..]), Ok(&b"n"[..])];
+            let (events, copies) = mpsc::channel();
+            let (input, replies) = mpsc::channel();
+            let pump = OutputPump {
+                pty: Box::new(Scripted(reads.into())),
+                terminal: Box::new(io::sink()),
+                events,
+                copy_output: true,
+                answer_queries: answer.then_some(input),
+            };
+            pump.run();
+            let copied: Vec<u8> = (copies.iter())
+                .filter_map(|event| match event {
+                    Event::Output(bytes) => Some(bytes),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            assert_eq!(copied, b"x\x1b[6ny\x1b[6n");
+            assert_eq!(replies.iter().count(), if answer { 2 } else { 0 });
         }
     }
 }

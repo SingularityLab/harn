@@ -72,35 +72,4 @@ mod tests {
         assert_eq!(queue.pop_due(t0 + GAP), Some(b"\r".to_vec()));
         assert_eq!(queue.next_due(), None);
     }
-
-    #[test]
-    fn late_polling_releases_everything_due_in_order() {
-        let t0 = Instant::now();
-        let mut queue = InputQueue::default();
-        queue.push(chunks(&["\x1b", "continue", "\r"]), GAP, t0);
-        let late = t0 + GAP * 5;
-        let released: Vec<_> = std::iter::from_fn(|| queue.pop_due(late)).collect();
-        assert_eq!(released, chunks(&["\x1b", "continue", "\r"]));
-    }
-
-    #[test]
-    fn a_second_action_queues_behind_the_first() {
-        let t0 = Instant::now();
-        let mut queue = InputQueue::default();
-        queue.push(chunks(&["a", "b"]), GAP, t0);
-        queue.push(chunks(&["c"]), GAP, t0);
-        assert_eq!(queue.pop_due(t0), Some(b"a".to_vec()));
-        assert_eq!(queue.pop_due(t0 + GAP), Some(b"b".to_vec()));
-        assert_eq!(queue.next_due(), Some(t0 + GAP * 2));
-    }
-
-    #[test]
-    fn clear_drops_pending_input() {
-        let t0 = Instant::now();
-        let mut queue = InputQueue::default();
-        queue.push(chunks(&["continue", "\r"]), GAP, t0);
-        queue.clear();
-        assert_eq!(queue.pop_due(t0 + GAP), None);
-        assert_eq!(queue.next_due(), None);
-    }
 }

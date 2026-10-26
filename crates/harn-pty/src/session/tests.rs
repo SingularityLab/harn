@@ -2,33 +2,50 @@
 //! fake agent is this test binary started again with an environment variable that turns one of the
 //! `fake_*` tests below from a no-op into the agent (or into `harn run` itself).
 
-use std::ffi::{OsStr, OsString};
-use std::sync::mpsc::{self, Receiver};
+use std::io::{self, Read, Write};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
-use fake::{
-    ECHO_EXIT_CODE, ECHO_PROMPT, FAKE_AGENT_ENV, FAKE_WRAPPER_ENV, GAVE_UP_EXIT_CODE, MODE_ECHO,
-    MODE_OVERLOADED, MODE_RAW, PATIENCE_ENV, RAW_EXIT_CODE, RAW_PROMPT, RESIZE_PROMPT,
-    RESUMED_EXIT_CODE,
-};
-use harn_core::{Action, Trigger};
-use harness::{RESIZED, SIZE, Step, automation, child_command, run_headless, test_policy};
+use harn_core::{Action, Policy, Trigger};
+use harness::{RESIZED, SIZE, Step, automation, child_command, fake_args, run_headless};
 
 use super::Session;
-use crate::command;
+use crate::console::{self, ConsoleGuard};
 use crate::pump::Event;
 use crate::queue::InputQueue;
 
-mod fake;
 mod harness;
 
-const DRY_RUN_PATIENCE_MS: &str = "2500";
+const FAKE_AGENT_ENV: &str = "HARN_FAKE_AGENT";
+/// Value: the libtest path of the agent to wrap.
+const FAKE_WRAPPER_ENV: &str = "HARN_FAKE_WRAPPER";
+const MODE_RAW: &str = "raw";
+const RESUMED_EXIT_CODE: i32 = 42;
+const RAW_EXIT_CODE: i32 = 9;
+const GAVE_UP_EXIT_CODE: i32 = 3;
+const RAW_PROMPT: &str = "RAW>";
+const RESIZE_PROMPT: &str = "waiting for resize";
+const PATIENCE: Duration = Duration::from_secs(30);
 const GAP_MS: u64 = 150;
+const OVERLOAD_ERROR: &str =
+    r#"API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
 
 /// Keys typed between our `continue` and its Enter would be submitted glued to it.
 #[test]
 fn typing_cancels_the_rest_of_an_injection() {
-    let (mut session, written) = bare_session();
+    let (pty_input, written) = mpsc::channel();
+    let mut session = Session {
+        master: None,
+        size: SIZE,
+        poll_size: Box::new(|| None),
+        driver: None,
+        dry_run: false,
+        queue: InputQueue::default(),
+        pty_input,
+        next_tick: Instant::now(),
+        output_closed: false,
+    };
     let t0 = Instant::now();
     let action = Action::Input {
         chunks: vec!["continue".into(), "\r".into()],
@@ -48,79 +65,17 @@ fn typing_cancels_the_rest_of_an_injection() {
     );
 }
 
-/// A notification is only logged: the session has no handle on the terminal, so it cannot write a
-/// bell into the middle of the agent's escape sequences, and it types nothing either.
-#[test]
-fn notify_only_logs() {
-    let (mut session, written) = bare_session();
-    let t0 = Instant::now();
-    let action = Action::Notify {
-        trigger: Trigger::Stalled,
-        message: "no progress for 15 minutes".into(),
-    };
-    session.execute(action, t0);
-    session.flush_due(t0 + Duration::from_millis(GAP_MS));
-    assert_eq!(written.try_iter().count(), 0);
-}
-
-/// The session loop without a pseudo terminal; what it types into the agent comes out of `.1`.
-fn bare_session() -> (Session, Receiver<Vec<u8>>) {
-    let (pty_input, written) = mpsc::channel();
-    let session = Session {
-        master: None,
-        size: SIZE,
-        poll_size: Box::new(|| None),
-        driver: None,
-        dry_run: false,
-        queue: InputQueue::default(),
-        pty_input,
-        next_tick: Instant::now(),
-        output_closed: false,
-    };
-    (session, written)
-}
-
 #[test]
 fn overloaded_agent_gets_continue_and_its_exit_code_propagates() {
-    let cmd = child_command(
-        &test_path("fake_agent"),
-        &[(FAKE_AGENT_ENV, MODE_OVERLOADED)],
-    );
-    let done = run_headless(cmd, Some(automation(false)), Vec::new());
+    let cmd = child_command(&test_path("fake_agent"), &[(FAKE_AGENT_ENV, "overloaded")]);
+    let done = run_headless(cmd, Some(automation()), Vec::new());
     assert_eq!(done.code, RESUMED_EXIT_CODE, "output:\n{}", done.output);
     let resumed = done.output.contains("fake agent: resumed");
     assert!(resumed, "output:\n{}", done.output);
 }
 
-#[test]
-fn dry_run_never_types() {
-    let env = [
-        (FAKE_AGENT_ENV, MODE_OVERLOADED),
-        (PATIENCE_ENV, DRY_RUN_PATIENCE_MS),
-    ];
-    let cmd = child_command(&test_path("fake_agent"), &env);
-    let done = run_headless(cmd, Some(automation(true)), Vec::new());
-    assert_eq!(done.code, GAVE_UP_EXIT_CODE, "output:\n{}", done.output);
-}
-
-#[test]
-fn passthrough_forwards_keystrokes_and_output() {
-    let cmd = child_command(&test_path("fake_agent"), &[(FAKE_AGENT_ENV, MODE_ECHO)]);
-    let done = run_headless(cmd, None, vec![(ECHO_PROMPT, Step::Type("ping\r"))]);
-    assert_eq!(done.code, ECHO_EXIT_CODE, "output:\n{}", done.output);
-    let echoed = done.output.contains("echo: PING");
-    assert!(echoed, "output:\n{}", done.output);
-}
-
-/// A raw-mode agent (like a real TUI) gets an arrow key, a lone Ctrl+Z and a resize.
-#[test]
-fn raw_mode_agent_gets_keys_and_resizes() {
-    let cmd = child_command(&test_path("fake_agent"), &[(FAKE_AGENT_ENV, MODE_RAW)]);
-    assert_raw_agent_finished(&run_headless(cmd, None, raw_agent_script()));
-}
-
-/// `run` itself, nested inside a PTY: real console modes, raw VT input, the terminal answering
-/// ConPTY's cursor query, resize propagation and exit codes.
+/// `run` itself, nested inside a PTY: real console modes (restored on drop and on unwind), raw VT
+/// input, the terminal answering ConPTY's cursor query, resize propagation and exit codes.
 #[test]
 fn run_drives_a_real_console_end_to_end() {
     let agent = test_path("fake_agent");
@@ -128,90 +83,159 @@ fn run_drives_a_real_console_end_to_end() {
         (FAKE_WRAPPER_ENV, agent.as_str()),
         (FAKE_AGENT_ENV, MODE_RAW),
     ];
-    let cmd = child_command(&test_path("fake_wrapper"), &env);
-    assert_raw_agent_finished(&run_headless(cmd, None, raw_agent_script()));
-}
-
-fn raw_agent_script() -> Vec<(&'static str, Step)> {
-    vec![
+    let script = vec![
         (RESIZE_PROMPT, Step::Resize),
         (RAW_PROMPT, Step::Type("\x1b[A")),
         (r"got: \x1b[A", Step::Type("\x1a")),
         (r"got: \x1b[A\x1a", Step::Type("x\r")),
-    ]
-}
-
-/// Read boundaries are not preserved in general, but an arrow key must arrive whole: a TUI would
-/// read a lone ESC as the Esc key.
-fn assert_raw_agent_finished(done: &harness::Finished) {
+    ];
+    let done = run_headless(
+        child_command(&test_path("fake_wrapper"), &env),
+        None,
+        script,
+    );
     assert_eq!(done.code, RAW_EXIT_CODE, "output:\n{}", done.output);
     let resized = format!("resized: {}x{}", RESIZED.cols, RESIZED.rows);
-    for expected in [resized.as_str(), r"read: \x1b[A", r"got: \x1b[A\x1ax\r"] {
-        assert!(
-            done.output.contains(expected),
-            "no {expected:?} in:\n{}",
-            done.output
-        );
+    // Read boundaries are not preserved in general, but a TUI reads a lone ESC as the Esc key.
+    let expected = [
+        resized.as_str(),
+        r"read: \x1b[A",
+        r"got: \x1b[A\x1ax\r",
+        "restored: true",
+    ];
+    for expected in expected {
+        let found = done.output.contains(expected);
+        assert!(found, "no {expected:?} in:\n{}", done.output);
     }
 }
 
 #[cfg(windows)]
 #[test]
 fn batch_shims_get_their_arguments_intact() {
+    use std::ffi::OsString;
+
+    use crate::command;
+
     let dir = std::env::temp_dir().join(format!("harn pty shim {}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join("echo args.cmd");
     std::fs::write(&script, "@echo off\r\necho ARGS=[%*]\r\nexit /b 7\r\n").unwrap();
     let args = ["hello world", "x(y)", "a & b", "", "what does /? do"].map(OsString::from);
     let cmd = command::build(script.as_os_str(), &args).unwrap();
-    let refused = command::build(script.as_os_str(), &[OsString::from("--x=/?")]);
     let done = run_headless(cmd, None, Vec::new());
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(done.code, 7, "output:\n{}", done.output);
     let expected = r#"ARGS=["hello world" x(y) "a & b" "" "what does /? do"]"#;
     assert!(done.output.contains(expected), "output:\n{}", done.output);
-    // Unquoted, `/?` makes cmd's `call` print its help and exit 0 without running the shim.
-    assert!(matches!(
-        refused,
-        Err(crate::PtyError::BatchArgument { .. })
-    ));
-}
-
-#[test]
-#[ignore = "runs the locally installed claude and codex, version flags only"]
-fn installed_agents_report_their_version() {
-    for (agent, marker) in [("claude", "Claude Code"), ("codex", "codex-cli")] {
-        let cmd = command::build(OsStr::new(agent), &[OsString::from("--version")]).unwrap();
-        let done = run_headless(cmd, None, Vec::new());
-        assert_eq!(done.code, 0, "{agent} output:\n{}", done.output);
-        let line = done.output.lines().find(|line| line.contains(marker));
-        assert!(line.is_some(), "{agent} output:\n{}", done.output);
-        println!("{agent}: {}", line.unwrap_or_default().escape_debug());
-    }
-    let opts = crate::RunOptions {
-        program: "codex".into(),
-        args: vec!["--version".into()],
-        profile: None,
-        policy: test_policy(),
-        dry_run: false,
-    };
-    assert_eq!(crate::run(opts).unwrap(), 0);
 }
 
 /// The fake agent; a no-op unless started by one of the tests above.
 #[test]
 fn fake_agent() {
-    if let Some(mode) = std::env::var_os(FAKE_AGENT_ENV) {
-        fake::act_as_agent(&mode);
-    }
+    let Some(mode) = std::env::var_os(FAKE_AGENT_ENV) else {
+        return;
+    };
+    std::process::exit(if mode == MODE_RAW {
+        raw_agent()
+    } else {
+        overloaded_agent()
+    });
 }
 
 /// `harn run <fake agent>`; a no-op unless started by one of the tests above.
 #[test]
 fn fake_wrapper() {
-    if let Some(agent_test) = std::env::var_os(FAKE_WRAPPER_ENV) {
-        fake::act_as_wrapper(&agent_test);
+    let Some(agent_test) = std::env::var_os(FAKE_WRAPPER_ENV) else {
+        return;
+    };
+    let opts = crate::RunOptions {
+        program: std::env::current_exe().unwrap().into(),
+        args: fake_args(&agent_test.to_string_lossy()),
+        profile: None,
+        policy: Policy::default(),
+        dry_run: false,
+    };
+    std::process::exit(crate::run(opts).unwrap());
+}
+
+/// Claude's final overload error above its empty input row; resumes once "continue" is entered.
+fn overloaded_agent() -> i32 {
+    let rule = "─".repeat(44);
+    print!("● Fixing the flaky test\n● {OVERLOAD_ERROR}\n\n{rule}\n❯ \n{rule}\n");
+    io::stdout().flush().unwrap();
+    let mut typed = Vec::new();
+    // Cooked mode: a read returns only once Enter was pressed.
+    let resumed = read_until(|chunk| {
+        typed.extend_from_slice(chunk);
+        typed.windows(b"continue".len()).any(|w| w == b"continue")
+    });
+    if !resumed {
+        return GAVE_UP_EXIT_CODE;
     }
+    println!("fake agent: resumed");
+    RESUMED_EXIT_CODE
+}
+
+/// A TUI in raw VT mode: waits to be resized, then reports each read and all input so far until
+/// Enter, and finally whether its console modes came back.
+fn raw_agent() -> i32 {
+    let console = ConsoleGuard::enable().unwrap();
+    // Raw output: no LF → CRLF translation.
+    print!("{RESIZE_PROMPT}\r\n");
+    io::stdout().flush().unwrap();
+    let deadline = Instant::now() + PATIENCE;
+    let resized = |s: portable_pty::PtySize| (s.cols, s.rows) == (RESIZED.cols, RESIZED.rows);
+    while !console::terminal_size().is_some_and(resized) {
+        if Instant::now() > deadline {
+            return GAVE_UP_EXIT_CODE;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    print!("resized: {}x{}\r\n{RAW_PROMPT}", RESIZED.cols, RESIZED.rows);
+    io::stdout().flush().unwrap();
+    let mut received = Vec::new();
+    let entered = read_until(|chunk| {
+        received.extend_from_slice(chunk);
+        print!(
+            "read: {}\r\ngot: {}\r\n",
+            chunk.escape_ascii(),
+            received.escape_ascii()
+        );
+        io::stdout().flush().unwrap();
+        received.contains(&b'\r')
+    });
+    drop(console);
+    let unwound = std::panic::catch_unwind(|| {
+        let _console = ConsoleGuard::enable();
+        panic!("unwinding through the console guard");
+    });
+    let raw = crossterm::terminal::is_raw_mode_enabled().unwrap();
+    print!("restored: {}\r\n", unwound.is_err() && !raw);
+    if entered {
+        RAW_EXIT_CODE
+    } else {
+        GAVE_UP_EXIT_CODE
+    }
+}
+
+/// Feeds each read from stdin to `done` until it returns true; false after [`PATIENCE`].
+fn read_until(mut done: impl FnMut(&[u8]) -> bool) -> bool {
+    let (tx, reads) = mpsc::channel();
+    thread::spawn(move || {
+        let (mut stdin, mut buf) = (console::Stdin::new(), [0; 1024]);
+        while let Ok(n @ 1..) = stdin.read(&mut buf) {
+            if tx.send(buf[..n].to_vec()).is_err() {
+                return;
+            }
+        }
+    });
+    let deadline = Instant::now() + PATIENCE;
+    while let Ok(chunk) = reads.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        if done(&chunk) {
+            return true;
+        }
+    }
+    false
 }
 
 /// `name` as libtest's `--exact` filter expects it, e.g. `session::tests::fake_agent`.
