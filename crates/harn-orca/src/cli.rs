@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// A hung call (Orca restarting, runtime wedged) must not stall the sidecar.
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -365,7 +365,7 @@ fn kill_tree(child: &mut Child) {
             .creation_flags(CREATE_NO_WINDOW)
             .status();
         if let Err(error) = killed {
-            warn!(%error, "could not run taskkill; killing only orca");
+            tracing::warn!(%error, "could not run taskkill; killing only orca");
         }
     }
     if let Err(error) = child.kill() {
