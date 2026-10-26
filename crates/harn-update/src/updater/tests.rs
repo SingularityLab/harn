@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
+use std::{fs, io};
 
 use super::*;
 use crate::system::Output;
@@ -312,25 +313,6 @@ fn latest_is_cached_for_the_interval_force_bypasses_it_and_a_corrupt_cache_is_em
     assert_eq!(lookups(), 3, "a corrupt cache is ignored");
     let rewritten = fs::read_to_string(&cache_file).unwrap();
     mentions(&rewritten, &[CODEX_PACKAGE, "0.164.0"]);
-}
-
-#[test]
-fn another_harn_holding_the_agents_lock_skips_the_install_and_the_lock_is_released_after() {
-    let fx = Fx::new("codex", "0.163.0");
-    let fake = fx.installing("0.164.0", "0.164.0");
-    let up = fx.up(&fake);
-
-    let other_harn = up.lock(fx.agent).unwrap().expect("the lock was free");
-    assert_eq!(skip(fx.go(&up, FORCE)), "another harn is updating codex");
-    assert!(fake.commands().is_empty());
-    assert!(matches!(fx.go(&up, CHECK), Ok(Outcome::Available { .. })));
-    drop(other_harn);
-
-    assert_eq!(fx.go(&up, INSTALL).unwrap(), updated("0.163.0", "0.164.0"));
-    assert!(
-        up.lock(fx.agent).unwrap().is_some(),
-        "released after the install"
-    );
 }
 
 /// Real registry and this machine's agents, always check-only. `-- --ignored --nocapture` to run.

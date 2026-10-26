@@ -1,7 +1,6 @@
 //! The update flow: find the binary, work out how it was installed, compare versions, install.
 
-use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io::{self, ErrorKind};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -173,9 +172,6 @@ impl Updater {
     }
 
     fn install(&self, t: &Target, cache: &mut Cache) -> Result<Outcome, UpdateError> {
-        let Some(_lock) = self.lock(t.agent)? else {
-            return Ok(skipped(format!("another harn is updating {}", t.agent.id)));
-        };
         let outcome = self.run_install(t);
         let failed_at = if matches!(outcome, Ok(Outcome::Updated { .. })) {
             0
@@ -185,27 +181,6 @@ impl Updater {
         cache.set_failed(t.agent.npm_package, failed_at);
         cache.save(&self.cache_dir);
         outcome
-    }
-
-    /// `None`: another harn is installing this agent. The OS drops the lock with the file handle, even
-    /// when the process dies, so there is nothing to clean up. The file is never deleted: removing it
-    /// while another process has it open would let two processes lock two different files.
-    fn lock(&self, agent: &Agent) -> Result<Option<File>, UpdateError> {
-        let path = self.cache_dir.join(format!("{}.install.lock", agent.id));
-        let take = || -> io::Result<Option<File>> {
-            fs::create_dir_all(&self.cache_dir)?;
-            let mut open = OpenOptions::new();
-            let file = open.create(true).truncate(false).write(true).open(&path)?;
-            match file.try_lock() {
-                Ok(()) => Ok(Some(file)),
-                Err(TryLockError::WouldBlock) => Ok(None),
-                Err(TryLockError::Error(err)) => Err(err),
-            }
-        };
-        take().map_err(|source| UpdateError::Io {
-            context: format!("cannot take the install lock {}", path.display()),
-            source,
-        })
     }
 
     fn run_install(&self, t: &Target) -> Result<Outcome, UpdateError> {
