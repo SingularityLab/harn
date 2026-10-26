@@ -92,8 +92,39 @@ pub(crate) fn pump_input(
 ) {
     let mut buf = vec![0; INPUT_BUF_BYTES];
     while let Some(n) = read_some(terminal.as_mut(), &mut buf, "terminal input") {
-        if pty.send(buf[..n].to_vec()).is_err() || events.send(Event::UserInput).is_err() {
+        let typed = !only_terminal_reports(&buf[..n]);
+        if pty.send(buf[..n].to_vec()).is_err() || (typed && events.send(Event::UserInput).is_err())
+        {
             return;
+        }
+    }
+}
+
+/// True when `chunk` is only what the terminal sends by itself (focus changes, cursor-position and
+/// device-attribute replies, mouse reports): those must not pause automation like typing does.
+fn only_terminal_reports(chunk: &[u8]) -> bool {
+    let mut rest = chunk;
+    while !rest.is_empty() {
+        match report_len(rest) {
+            Some(len) => rest = &rest[len..],
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Length of the terminal report `bytes` starts with, if any. A report split across reads counts as
+/// typing, which only errs on the side of pausing.
+fn report_len(bytes: &[u8]) -> Option<usize> {
+    const CSI: &[u8] = b"\x1b[";
+    const X10_MOUSE_LEN: usize = CSI.len() + 4;
+    let body = bytes.strip_prefix(CSI)?;
+    match body.first()? {
+        b'I' | b'O' => Some(CSI.len() + 1),
+        b'M' => (bytes.len() >= X10_MOUSE_LEN).then_some(X10_MOUSE_LEN),
+        _ => {
+            let end = body.iter().position(|b| (0x40..=0x7e).contains(b))?;
+            matches!(body[end], b'R' | b'M' | b'm' | b'c').then_some(CSI.len() + end + 1)
         }
     }
 }
@@ -171,6 +202,25 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn terminal_reports_are_not_typing() {
+        let reports: [&[u8]; 6] = [
+            b"\x1b[I",
+            b"\x1b[O",
+            b"\x1b[12;40R",
+            b"\x1b[<0;10;5M\x1b[<0;10;5m",
+            b"\x1b[?1;2c",
+            b"\x1b[I\x1b[1;1R",
+        ];
+        for chunk in reports {
+            assert!(only_terminal_reports(chunk), "{chunk:?}");
+        }
+        let typing: [&[u8]; 6] = [b"a", b"continue", b"\r", b"\x1b[A", b"\x1b", b"\x1b[Ix"];
+        for chunk in typing {
+            assert!(!only_terminal_reports(chunk), "{chunk:?}");
+        }
+    }
 
     /// Each read returns the next scripted result, then end of stream.
     struct Scripted(VecDeque<Result<&'static [u8], ErrorKind>>);
