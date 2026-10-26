@@ -70,10 +70,15 @@ pub(crate) struct TerminalInfo {
     pub handle: String,
     pub connected: bool,
     pub writable: bool,
-    /// Epoch ms of the terminal's last output.
+    /// Epoch ms of the terminal's last output; Orca sends `null` before the first output.
+    #[serde(default, deserialize_with = "zero_if_null")]
     pub last_output_at: u64,
     /// Orca's guess of the agent in the terminal; it stays after the agent exits to a shell.
     pub agent_identity: Option<String>,
+}
+
+fn zero_if_null<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u64, D::Error> {
+    Ok(Option::<u64>::deserialize(de)?.unwrap_or(0))
 }
 
 /// A rendered screen, one logical line per `\n`.
@@ -402,6 +407,14 @@ mod tests {
         let malformed = r#"{"ok":true,"result":{"terminals":[{"handle":"t"}]}}"#;
         let err = parse::<ListResult>("terminal list", malformed.as_bytes()).unwrap_err();
         assert!(matches!(err, CliError::Json { .. }));
+    }
+
+    #[test]
+    fn a_terminal_without_output_yet_does_not_break_the_list() {
+        let fresh = r#"{"ok":true,"result":{"terminals":[
+            {"handle":"term_a","connected":true,"writable":true,"lastOutputAt":null}]}}"#;
+        let list: ListResult = parse("terminal list", fresh.as_bytes()).unwrap();
+        assert_eq!(list.terminals[0].last_output_at, 0);
     }
 
     #[test]
