@@ -22,7 +22,7 @@ It works with [Orca](https://github.com/stablyai/orca) and any other terminal on
 ## Install
 
 ```sh
-git clone <this repo> && cargo install --path harn/crates/harn
+cargo install --git https://github.com/SingularityLab/harn harn
 ```
 
 ## Use
