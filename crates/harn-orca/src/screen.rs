@@ -91,7 +91,7 @@ mod tests {
         let prompts = [
             r"PS C:\src> claude",
             "PS>",
-            r"C:\Users\dex>",
+            r"C:\Users\alice>",
             "dex@box:~/src$",
             "$",
         ];

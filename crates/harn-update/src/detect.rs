@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(at("/home/dex/.claude/local/claude", "/home/dex"), native);
         // Case and separators differ between PATH and the home directory on Windows.
         assert_eq!(
-            at(r"c:\USERS\dex\.local\bin\claude.exe", r"C:\Users\dex"),
+            at(r"c:\USERS\alice\.local\bin\claude.exe", r"C:\Users\alice"),
             native
         );
         assert!(

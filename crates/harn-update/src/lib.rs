@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn find_accepts_ids_basenames_suffixes_and_paths_only_for_known_agents() {
-        let windows = r"C:\Users\dex\AppData\Roaming\npm\claude.cmd";
+        let windows = r"C:\Users\alice\AppData\Roaming\npm\claude.cmd";
         for (name, id) in [
             ("claude", "claude"),
             ("CLAUDE.EXE", "claude"),
