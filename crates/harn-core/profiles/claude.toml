@@ -14,6 +14,10 @@ tail_lines = 40
 working = [
     # Footer suffix while a turn runs, including Claude's own retries.
     '(?i)\besc to interrupt\b',
+    # Spinner row: "✶ Cascading…", "✻ Newspapering… (2m 39s · ↓ 12.0k tokens)". With a status
+    # line configured the footer has no "esc to interrupt" (2.1.312), so this row is the only sign.
+    # The turn-finished row ("✻ Baked for 15s · done 3:14 PM") has no ellipsis.
+    '^[·✢✳✶✻✽*]\s+[^·…()]+…(?:\s|$)',
     # Own retry banner on the spinner row: "✻ API error · Retrying in 1s · attempt 1/4".
     '·\s*Retrying in \S+.*·\s*attempt \d+/\d+',
 ]

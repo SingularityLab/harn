@@ -1,0 +1,15 @@
+ ▐▛███▛█   Claude Code v2.1.312
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~/projects/demo-project
+❯ slow with statusline
+● MOCK-RESUMED: hi after continue
+✻ Baked for 15s · done 3:14 PM
+❯ fail now
+● API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check your inference gateway
+  (127.0.0.1:47529).
+✻ Sautéed for 0s · done 3:14 PM
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [mock] | Opus 5.5 | ctx:1%
+  ⏵⏵ auto mode on (shift+tab to cycle)

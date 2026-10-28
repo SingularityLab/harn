@@ -1,0 +1,21 @@
+ ▐▛███▛█   Claude Code v2.1.312
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~/projects/demo-project
+❯ bgshell please
+  Ran 1 shell command
+● MOCK-RESUMED: hi after continue
+✻ Sautéed for 40s · done 3:11 PM · 1 shell still running
+❯ bgagent please
+● API Error: Connection dropped (ECONNRESET). Check the gateway set in ANTHROPIC_BASE_URL, then try again.
+✻ Churned for 28s · done 3:11 PM · 1 shell still running
+❯ now bgagent please
+● Agent(Background wait)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+✻ Shenaniganing… (10s · ↓ 34 tokens)
+  ⎿  Tip: Double-tap esc to rewind the code and/or conversation to a previous point in time
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on · 1 shell · esc to interrupt · ↓ to manage
+  ● main
+  ◯ general-purpose  Background wait                                                                                                                     10s

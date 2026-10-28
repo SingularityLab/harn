@@ -40,6 +40,12 @@ a mock with an API key.
 8. With API-key auth, Claude **never shows the subscription usage-limit text**. Even with the
    `anthropic-ratelimit-unified-*` headers, the final screen says `API Error: Request rejected (429) · Rate limited`.
    The retry banner does use the unified headers: `✻ Session limit reached · Retrying in 1s (11:47pm) · attempt 1/4`.
+9. With a **status line configured**, Claude 2.1.312 (Linux, inside Orca) drops `esc to interrupt` from the
+   footer while a turn runs: `  ⏵⏵ auto mode on (shift+tab to cycle)` stays as it is at idle. Only the spinner
+   row (`· Scampering…`, `✻ Newspapering… (2m 39s · ↓ 12.0k tokens)`) shows that Claude is busy. It is a glyph
+   from `· ✢ ✳ ✶ ✻ ✽ *`, a verb and `…`; the turn-finished row (`✻ Baked for 15s · done 3:14 PM`) has no
+   ellipsis. Background shells and agents keep the hint (`· 1 shell · esc to interrupt · ↓ to manage`).
+   Fixtures: `claude/{working,idle,overloaded}_statusline.txt`, `claude/working_background_agent.txt`.
 
 ## 1. Claude Code 2.1.310
 
@@ -220,7 +226,7 @@ the regex alternation `|`.
 
 | Category | Claude | Codex |
 |---|---|---|
-| **busy (veto)** | `esc to interrupt` | `esc to interrupt` |
+| **busy (veto)** | `esc to interrupt\|^[·✢✳✶✻✽*]\s+[^·…()]+…(?:\s\|$)` | `esc to interrupt` |
 | own_retry (busy) | `·\s*Retrying in \S+.*·\s*attempt \d+/\d+` | `^•\s*Reconnecting\.\.\.\s*\d+/\d+` |
 | overloaded | `^● API Error: (?:Repeated 529\|529\b\|.*(?i:overloaded))\|^● .*is experiencing high load` | `^■ (?:Selected model is at capacity\|We[’']re currently experiencing high demand\|Flex capacity unavailable)` |
 | server_error | `^● API Error: 5\d\d\b\|server-side issue` | `^■ exceeded retry limit, last status: 5\d\d\|^■ We[’']re currently experiencing high demand` |
